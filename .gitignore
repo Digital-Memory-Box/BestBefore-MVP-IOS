@@ -91,6 +91,7 @@ iOSInjectionProject/
 
 # macOS
 .DS_Store
+__MACOSX/
 
 # Build logs
 build_log.txt
@@ -100,3 +101,9 @@ build_output.txt
 
 # Node modules (if any)
 node_modules/
+
+# VSCode
+.vscode/
+
+# Realm Swift
+realm-swift/
