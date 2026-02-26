@@ -170,10 +170,13 @@ struct HallwayView: View {
     .onAppear(perform: fetchRooms)
     .sheet(isPresented: $showingAddRoom) {
       CreateRoomFlowView {
-        name, isPrivate, isTimeCapsule, days, hours, mins, date, backgroundMusic in
+        name, isPrivate, isTimeCapsule, days, hours, mins, date, backgroundMusic, theme,
+        expirationDate, rollingExpiryDays, collaborators in
         createRoom(
           name: name, isPrivate: isPrivate, isTimeCapsule: isTimeCapsule,
-          days: days, hours: hours, mins: mins, unlockDate: date, backgroundMusic: backgroundMusic)
+          days: days, hours: hours, mins: mins, unlockDate: date, backgroundMusic: backgroundMusic,
+          theme: theme, expirationDate: expirationDate, rollingExpiryDays: rollingExpiryDays,
+          collaborators: collaborators)
       }
     }
     .sheet(isPresented: $showingProfile) {
@@ -200,7 +203,11 @@ struct HallwayView: View {
   private func createRoom(
     name: String, isPrivate: Bool, isTimeCapsule: Bool, days: Int, hours: Int, mins: Int,
     unlockDate: Date?,
-    backgroundMusic: String?
+    backgroundMusic: String?,
+    theme: String,
+    expirationDate: Date?,
+    rollingExpiryDays: Int,
+    collaborators: [Collaborator]
   ) {
     isLoading = true
     Task {
@@ -214,7 +221,11 @@ struct HallwayView: View {
           capsuleDurationHours: hours,
           capsuleDurationMinutes: mins,
           unlockDate: unlockDate,
-          backgroundMusic: backgroundMusic)
+          backgroundMusic: backgroundMusic,
+          theme: theme,
+          expirationDate: expirationDate,
+          rollingExpiryDays: rollingExpiryDays,
+          collaborators: collaborators)
         fetchRooms()  // Refresh list
       } catch {
         errorMessage = error.localizedDescription

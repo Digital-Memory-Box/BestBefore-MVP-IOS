@@ -10,8 +10,13 @@ struct RoomDTO: Codable {
   var capsuleDurationDays: Int?
   var capsuleDurationHours: Int?
   var capsuleDurationMinutes: Int?
-  var unlockDate: Date?  // NEW
+  var unlockDate: Date?
   var backgroundMusic: String?
+  var theme: String?
+  var expirationDate: Date?
+  var rollingExpiryDays: Int?
+  var collaborators: [Collaborator]?  // CHANGED
+  var collaboratorEmails: [String]?  // BACKWARD COMPATIBILITY
   var createdAt: Date
 }
 
@@ -84,8 +89,12 @@ private final class BackendAPIClient: @unchecked Sendable {
   func createRoom(
     name: String, ownerEmail: String?, isPrivate: Bool, isTimeCapsule: Bool,
     capsuleDurationDays: Int, capsuleDurationHours: Int, capsuleDurationMinutes: Int,
-    unlockDate: Date?,  // NEW
-    backgroundMusic: String?
+    unlockDate: Date?,
+    backgroundMusic: String?,
+    theme: String = "default",
+    expirationDate: Date? = nil,
+    rollingExpiryDays: Int = 0,
+    collaborators: [Collaborator] = []  // CHANGED
   )
     async throws -> String
   {
@@ -100,6 +109,11 @@ private final class BackendAPIClient: @unchecked Sendable {
       unlockDateString = formatter.string(from: date)
     }
 
+    var expirationDateString: String? = nil
+    if let edate = expirationDate {
+      expirationDateString = formatter.string(from: edate)
+    }
+
     let body: [String: Any?] = [
       "name": name,
       "ownerEmail": ownerEmail,
@@ -108,8 +122,12 @@ private final class BackendAPIClient: @unchecked Sendable {
       "capsuleDurationDays": capsuleDurationDays,
       "capsuleDurationHours": capsuleDurationHours,
       "capsuleDurationMinutes": capsuleDurationMinutes,
-      "unlockDate": unlockDateString,  // NEW
+      "unlockDate": unlockDateString,
       "backgroundMusic": backgroundMusic,
+      "theme": theme,
+      "expirationDate": expirationDateString,
+      "rollingExpiryDays": rollingExpiryDays,
+      "collaborators": collaborators.map { ["email": $0.email, "role": $0.role.rawValue] },  // CHANGED
     ]
     req.httpBody = try JSONSerialization.data(withJSONObject: body.compactMapValues { $0 })
 
@@ -123,40 +141,54 @@ private final class BackendAPIClient: @unchecked Sendable {
   }
 
   func updateRoom(
-    id: String, name: String?, isPrivate: Bool?, isTimeCapsule: Bool?,
-    capsuleDurationDays: Int?, capsuleDurationHours: Int?, capsuleDurationMinutes: Int?,
-    unlockDate: Date?,  // NEW
-    backgroundMusic: String?
+    id _id: String, name _name: String?, isPrivate _isPrivate: Bool?,
+    isTimeCapsule _isTimeCapsule: Bool?,
+    capsuleDurationDays _days: Int?, capsuleDurationHours _hours: Int?,
+    capsuleDurationMinutes _mins: Int?,
+    unlockDate _unlockDate: Date?,
+    backgroundMusic _music: String?,
+    theme _theme: String?,
+    expirationDate _expirationDate: Date?,
+    rollingExpiryDays _rollingExpiryDays: Int?,
+    collaborators _collaborators: [Collaborator]?  // CHANGED
   ) async throws {
-    let url = baseURL.appendingPathComponent("rooms").appendingPathComponent(id)
+    let url = baseURL.appendingPathComponent("rooms").appendingPathComponent(_id)
     var req = try await authorizedRequest(to: url, method: "PATCH")
     req.addValue("application/json", forHTTPHeaderField: "Content-Type")
 
     let formatter = ISO8601DateFormatter()
 
     var body: [String: Any] = [:]
-    if let name = name { body["name"] = name }
-    if let isPrivate = isPrivate { body["isPrivate"] = isPrivate }
-    if let isTimeCapsule = isTimeCapsule { body["isTimeCapsule"] = isTimeCapsule }
-    if let capsuleDurationDays = capsuleDurationDays {
-      body["capsuleDurationDays"] = capsuleDurationDays
-    }
-    if let capsuleDurationHours = capsuleDurationHours {
-      body["capsuleDurationHours"] = capsuleDurationHours
-    }
-    if let capsuleDurationMinutes = capsuleDurationMinutes {
-      body["capsuleDurationMinutes"] = capsuleDurationMinutes
+    if let nameValue = _name { body["name"] = nameValue }
+    if let privateValue = _isPrivate { body["isPrivate"] = privateValue }
+    if let capsuleValue = _isTimeCapsule { body["isTimeCapsule"] = capsuleValue }
+    if let daysValue = _days { body["capsuleDurationDays"] = daysValue }
+    if let hoursValue = _hours { body["capsuleDurationHours"] = hoursValue }
+    if let minsValue = _mins { body["capsuleDurationMinutes"] = minsValue }
+
+    if let unlockVal = _unlockDate {
+      body["unlockDate"] = formatter.string(from: unlockVal)
     }
 
-    if let unlockDate = unlockDate {
-      body["unlockDate"] = formatter.string(from: unlockDate)
+    if let themeValue = _theme { body["theme"] = themeValue }
+
+    if let expiryVal = _expirationDate {
+      body["expirationDate"] = formatter.string(from: expiryVal)
     }
 
-    // Explicitly handle nil backgroundMusic to allow clearing it
-    if let backgroundMusic = backgroundMusic {
-      body["backgroundMusic"] = backgroundMusic
-    } else {
-      body["backgroundMusic"] = NSNull()
+    if let rollingValue = _rollingExpiryDays {
+      body["rollingExpiryDays"] = rollingValue
+    }
+
+    if let collaboratorsVal = _collaborators {
+      body["collaborators"] = collaboratorsVal.map {
+        ["email": $0.email, "role": $0.role.rawValue]
+      }
+    }
+
+    // Explicitly handle nil music to allow clearing it if needed (optional)
+    if let musicValue = _music {
+      body["backgroundMusic"] = musicValue
     }
 
     req.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -212,6 +244,34 @@ private final class BackendAPIClient: @unchecked Sendable {
     let type: String
     let title: String
     let content: String?
+  }
+
+  func getArchivedMemories(roomId: String) async throws -> [MemoryDTO] {
+    let url = baseURL.appendingPathComponent("rooms")
+      .appendingPathComponent(roomId)
+      .appendingPathComponent("memories")
+      .appendingPathComponent("archived")
+    let req = try await authorizedRequest(to: url, method: "GET")
+
+    let (data, resp) = try await session.data(for: req)
+    guard let http = resp as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+      throw URLError(.badServerResponse)
+    }
+
+    return try decoder.decode([MemoryDTO].self, from: data)
+  }
+
+  func dumpMemories(roomId: String) async throws {
+    let url = baseURL.appendingPathComponent("rooms")
+      .appendingPathComponent(roomId)
+      .appendingPathComponent("dump")
+    var req = try await authorizedRequest(to: url, method: "POST")
+    req.addValue("application/json", forHTTPHeaderField: "Content-Type")
+
+    let (_, resp) = try await session.data(for: req)
+    guard let http = resp as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+      throw URLError(.badServerResponse)
+    }
   }
 
   func createMemory(roomId: String, type: String, title: String, content: String?) async throws {
@@ -275,6 +335,21 @@ final class Database: @unchecked Sendable {
         capsuleDurationMinutes: dto.capsuleDurationMinutes ?? 0,
         unlockDate: dto.unlockDate,  // FIXED
         backgroundMusic: dto.backgroundMusic,
+        theme: dto.theme ?? "default",
+        expirationDate: dto.expirationDate,
+        rollingExpiryDays: dto.rollingExpiryDays ?? 0,
+        collaborators: {
+          var combined = dto.collaborators ?? []
+          if let emails = dto.collaboratorEmails {
+            let legacy = emails.map { Collaborator(email: $0, role: .contributor) }
+            for c in legacy {
+              if !combined.contains(where: { $0.email == c.email }) {
+                combined.append(c)
+              }
+            }
+          }
+          return combined
+        }(),
         createdAt: dto.createdAt)
     }
   }
@@ -293,6 +368,21 @@ final class Database: @unchecked Sendable {
         capsuleDurationMinutes: dto.capsuleDurationMinutes ?? 0,
         unlockDate: dto.unlockDate,  // FIXED
         backgroundMusic: dto.backgroundMusic,
+        theme: dto.theme ?? "default",
+        expirationDate: dto.expirationDate,
+        rollingExpiryDays: dto.rollingExpiryDays ?? 0,
+        collaborators: {
+          var combined = dto.collaborators ?? []
+          if let emails = dto.collaboratorEmails {
+            let legacy = emails.map { Collaborator(email: $0, role: .contributor) }
+            for c in legacy {
+              if !combined.contains(where: { $0.email == c.email }) {
+                combined.append(c)
+              }
+            }
+          }
+          return combined
+        }(),
         createdAt: dto.createdAt)
     }
   }
@@ -300,15 +390,23 @@ final class Database: @unchecked Sendable {
   func createRoom(
     name: String, ownerEmail: String? = nil, isPrivate: Bool = false, isTimeCapsule: Bool = false,
     capsuleDurationDays: Int = 21, capsuleDurationHours: Int = 0, capsuleDurationMinutes: Int = 0,
-    unlockDate: Date? = nil,  // NEW
-    backgroundMusic: String? = nil
+    unlockDate: Date? = nil,
+    backgroundMusic: String? = nil,
+    theme: String = "default",
+    expirationDate: Date? = nil,
+    rollingExpiryDays: Int = 0,
+    collaborators: [Collaborator] = []
   ) async throws {
     _ = try await self.client.createRoom(
       name: name, ownerEmail: ownerEmail, isPrivate: isPrivate, isTimeCapsule: isTimeCapsule,
       capsuleDurationDays: capsuleDurationDays, capsuleDurationHours: capsuleDurationHours,
       capsuleDurationMinutes: capsuleDurationMinutes,
       unlockDate: unlockDate,
-      backgroundMusic: backgroundMusic)
+      backgroundMusic: backgroundMusic,
+      theme: theme,
+      expirationDate: expirationDate,
+      rollingExpiryDays: rollingExpiryDays,
+      collaborators: collaborators)
   }
 
   func deleteRoom(id: String) async throws {
@@ -316,18 +414,35 @@ final class Database: @unchecked Sendable {
   }
 
   func updateRoom(
-    id: String, name: String? = nil, isPrivate: Bool? = nil, isTimeCapsule: Bool? = nil,
-    capsuleDurationDays: Int? = nil, capsuleDurationHours: Int? = nil,
-    capsuleDurationMinutes: Int? = nil,
-    unlockDate: Date? = nil,  // NEW
-    backgroundMusic: String? = nil
+    id _id: String,
+    name _name: String? = nil,
+    isPrivate _isPrivate: Bool? = nil,
+    isTimeCapsule _isTimeCapsule: Bool? = nil,
+    capsuleDurationDays _days: Int? = nil,
+    capsuleDurationHours _hours: Int? = nil,
+    capsuleDurationMinutes _mins: Int? = nil,
+    unlockDate _unlockDate: Date? = nil,
+    backgroundMusic _music: String? = nil,
+    theme _theme: String? = nil,
+    expirationDate _expirationDate: Date? = nil,
+    rollingExpiryDays _rollingExpiryDays: Int? = nil,
+    collaborators _collaborators: [Collaborator]? = nil
   ) async throws {
     try await self.client.updateRoom(
-      id: id, name: name, isPrivate: isPrivate, isTimeCapsule: isTimeCapsule,
-      capsuleDurationDays: capsuleDurationDays, capsuleDurationHours: capsuleDurationHours,
-      capsuleDurationMinutes: capsuleDurationMinutes,
-      unlockDate: unlockDate,
-      backgroundMusic: backgroundMusic)
+      id: _id,
+      name: _name,
+      isPrivate: _isPrivate,
+      isTimeCapsule: _isTimeCapsule,
+      capsuleDurationDays: _days,
+      capsuleDurationHours: _hours,
+      capsuleDurationMinutes: _mins,
+      unlockDate: _unlockDate,
+      backgroundMusic: _music,
+      theme: _theme,
+      expirationDate: _expirationDate,
+      rollingExpiryDays: _rollingExpiryDays,
+      collaborators: _collaborators
+    )
   }
 
   // --- Memory Persistence ---
@@ -340,9 +455,28 @@ final class Database: @unchecked Sendable {
         type: MemoryType(rawValue: dto.type) ?? .note,
         title: dto.title,
         date: dto.createdAt,
-        content: dto.content
+        content: dto.content,
+        isArchived: false  // Defaulted for main vault
       )
     }
+  }
+
+  func getArchivedMemories(for roomId: String) async throws -> [MemoryItem] {
+    let dtos = try await self.client.getArchivedMemories(roomId: roomId)
+    return dtos.map { dto in
+      MemoryItem(
+        id: dto._id,
+        type: MemoryType(rawValue: dto.type) ?? .note,
+        title: dto.title,
+        date: dto.createdAt,
+        content: dto.content,
+        isArchived: true
+      )
+    }
+  }
+
+  func dumpMemories(for roomId: String) async throws {
+    try await self.client.dumpMemories(roomId: roomId)
   }
 
   func addMemory(roomId: String, type: MemoryType, title: String, content: String? = nil)
@@ -360,7 +494,8 @@ final class Database: @unchecked Sendable {
         type: MemoryType(rawValue: dto.type) ?? .note,
         title: dto.title,
         date: dto.createdAt,
-        content: dto.content
+        content: dto.content,
+        isArchived: false
       )
     }
   }

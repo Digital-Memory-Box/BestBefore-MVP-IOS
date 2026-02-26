@@ -130,6 +130,16 @@ struct RoamingCardView: View {
           .font(.system(size: 12, weight: .semibold))
           .foregroundColor(.white.opacity(0.6))
           .padding(.top, 8)
+
+        if room.isLocked {
+          HStack(spacing: 4) {
+             Image(systemName: "lock.fill")
+             Text("Locked")
+          }
+          .font(.system(size: 12, weight: .bold))
+          .foregroundColor(.orange)
+          .padding(.top, 4)
+        }
       }
       .padding(20)
     }

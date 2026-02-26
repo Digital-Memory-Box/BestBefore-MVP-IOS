@@ -24,8 +24,19 @@ struct CreateRoomFlowView: View {
   @State private var targetDate: Date = Date().addingTimeInterval(86400)  // Default tomorrow
 
   @State private var selectedMusic: String? = nil
+  @State private var selectedTheme: String = "default"
 
-  var onComplete: (String, Bool, Bool, Int, Int, Int, Date?, String?) -> Void
+  // Step 4 Data - Memory Dump Rules
+  @State private var expirationDateEnabled = false
+  @State private var expirationDate: Date = Date().addingTimeInterval(86400 * 30)  // Default 30 days
+  @State private var rollingExpiryDays: Int = 0  // 0 = Never
+
+  // Step 5 Data - Collaborators
+  @State private var collaborators: [Collaborator] = []
+  @State private var newCollaboratorEmail: String = ""
+
+  var onComplete:
+    (String, Bool, Bool, Int, Int, Int, Date?, String?, String, Date?, Int, [Collaborator]) -> Void
 
   var body: some View {
     ZStack {
@@ -56,15 +67,27 @@ struct CreateRoomFlowView: View {
             .frame(width: 10, height: 10)
           Rectangle()
             .fill(step >= 2 ? Color.blue : Color.gray.opacity(0.3))
-            .frame(width: 40, height: 2)
+            .frame(width: 30, height: 2)
           Circle()
             .fill(step >= 2 ? Color.blue : Color.gray.opacity(0.3))
             .frame(width: 10, height: 10)
           Rectangle()
             .fill(step >= 3 ? Color.blue : Color.gray.opacity(0.3))
-            .frame(width: 40, height: 2)
+            .frame(width: 30, height: 2)
           Circle()
             .fill(step >= 3 ? Color.blue : Color.gray.opacity(0.3))
+            .frame(width: 10, height: 10)
+          Rectangle()
+            .fill(step >= 4 ? Color.blue : Color.gray.opacity(0.3))
+            .frame(width: 30, height: 2)
+          Circle()
+            .fill(step >= 4 ? Color.blue : Color.gray.opacity(0.3))
+            .frame(width: 10, height: 10)
+          Rectangle()
+            .fill(step >= 5 ? Color.blue : Color.gray.opacity(0.3))
+            .frame(width: 30, height: 2)
+          Circle()
+            .fill(step >= 5 ? Color.blue : Color.gray.opacity(0.3))
             .frame(width: 10, height: 10)
         }
 
@@ -76,8 +99,16 @@ struct CreateRoomFlowView: View {
           stepTwoView
             .transition(
               .asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
-        } else {
+        } else if step == 3 {
           stepThreeView
+            .transition(
+              .asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
+        } else if step == 4 {
+          stepFourView
+            .transition(
+              .asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
+        } else {
+          stepFiveView
             .transition(
               .asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
         }
@@ -86,9 +117,9 @@ struct CreateRoomFlowView: View {
 
         // Navigation Buttons
         HStack {
-          if step == 2 {
+          if step > 1 {
             Button {
-              withAnimation { step = 1 }
+              withAnimation { step -= 1 }
             } label: {
               Text("Back")
                 .fontWeight(.bold)
@@ -101,21 +132,20 @@ struct CreateRoomFlowView: View {
           }
 
           Button {
-            if step == 1 {
-              if !roomName.isEmpty {
-                withAnimation { step += 1 }
-              }
-            } else if step == 2 {
-              withAnimation { step = 3 }
+            if step < 5 {
+              if step == 1 && roomName.isEmpty { return }
+              withAnimation { step += 1 }
             } else {
               let finalDate = (lockMode == .date) ? targetDate : nil
+              let finalExpiration = expirationDateEnabled ? expirationDate : nil
               onComplete(
                 roomName, isPrivate, timeCapsuleEnabled, capsuleDuration, capsuleHours,
-                capsuleMinutes, finalDate, selectedMusic)
+                capsuleMinutes, finalDate, selectedMusic, selectedTheme, finalExpiration,
+                rollingExpiryDays, collaborators)
               dismiss()
             }
           } label: {
-            Text(step < 3 ? "Next" : "Create Room")
+            Text(step < 5 ? "Next" : "Create Room")
               .fontWeight(.bold)
               .foregroundColor(.white)
               .frame(maxWidth: .infinity)
@@ -289,44 +319,270 @@ struct CreateRoomFlowView: View {
       }
 
       ScrollView {
-        VStack(spacing: 12) {
-          MusicPresetOption(
-            title: "None", icon: "speaker.slash.fill", isSelected: selectedMusic == nil
-          ) {
-            selectedMusic = nil
+        VStack(spacing: 24) {
+          // --- THEME SELECTOR ---
+          VStack(alignment: .leading, spacing: 12) {
+            Text("Room Theme")
+              .font(.system(size: 20, weight: .bold))
+              .foregroundColor(.white)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+              HStack(spacing: 12) {
+                ThemeOption(title: "Default", color: .blue, isSelected: selectedTheme == "default")
+                { selectedTheme = "default" }
+                ThemeOption(title: "Ocean", color: .teal, isSelected: selectedTheme == "ocean") {
+                  selectedTheme = "ocean"
+                }
+                ThemeOption(title: "Sunset", color: .orange, isSelected: selectedTheme == "sunset")
+                { selectedTheme = "sunset" }
+                ThemeOption(title: "Forest", color: .green, isSelected: selectedTheme == "forest") {
+                  selectedTheme = "forest"
+                }
+                ThemeOption(
+                  title: "Cyberpunk", color: .purple, isSelected: selectedTheme == "cyberpunk"
+                ) { selectedTheme = "cyberpunk" }
+              }
+            }
           }
 
-          MusicPresetOption(
-            title: "Lofi Beats", icon: "music.note", isSelected: selectedMusic == "Lofi Beats"
-          ) {
-            selectedMusic = "Lofi Beats"
-          }
+          Divider().background(Color.white.opacity(0.1))
 
-          MusicPresetOption(
-            title: "Nature Ambience", icon: "leaf.fill",
-            isSelected: selectedMusic == "Nature Ambience"
-          ) {
-            selectedMusic = "Nature Ambience"
-          }
+          // --- MUSIC SELECTOR ---
+          VStack(alignment: .leading, spacing: 12) {
+            Text("Background Music")
+              .font(.system(size: 20, weight: .bold))
+              .foregroundColor(.white)
 
-          MusicPresetOption(
-            title: "Minimal Piano", icon: "pianokeys", isSelected: selectedMusic == "Minimal Piano"
-          ) {
-            selectedMusic = "Minimal Piano"
-          }
+            VStack(spacing: 12) {
+              MusicPresetOption(
+                title: "None", icon: "speaker.slash.fill", isSelected: selectedMusic == nil
+              ) {
+                selectedMusic = nil
+              }
 
-          MusicPresetOption(
-            title: "Vaporwave", icon: "sparkles", isSelected: selectedMusic == "Vaporwave"
-          ) {
-            selectedMusic = "Vaporwave"
+              MusicPresetOption(
+                title: "Lofi Beats", icon: "music.note", isSelected: selectedMusic == "Lofi Beats"
+              ) {
+                selectedMusic = "Lofi Beats"
+              }
+
+              MusicPresetOption(
+                title: "Nature Ambience", icon: "leaf.fill",
+                isSelected: selectedMusic == "Nature Ambience"
+              ) {
+                selectedMusic = "Nature Ambience"
+              }
+
+              MusicPresetOption(
+                title: "Minimal Piano", icon: "pianokeys",
+                isSelected: selectedMusic == "Minimal Piano"
+              ) {
+                selectedMusic = "Minimal Piano"
+              }
+
+              MusicPresetOption(
+                title: "Vaporwave", icon: "sparkles", isSelected: selectedMusic == "Vaporwave"
+              ) {
+                selectedMusic = "Vaporwave"
+              }
+            }
           }
         }
       }
     }
     .padding(.horizontal, 24)
   }
+
+  // --- NEW STEP 4: Memory Dump Rules ---
+  var stepFourView: some View {
+    VStack(alignment: .leading, spacing: 24) {
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Memory Dump Rules")
+          .font(.system(size: 28, weight: .bold))
+          .foregroundColor(.white)
+        Text("Configure auto-archival for drops.")
+          .font(.system(size: 16))
+          .foregroundColor(.gray)
+      }
+
+      ScrollView {
+        VStack(spacing: 24) {
+
+          // Option A: Rolling Expiry
+          VStack(alignment: .leading, spacing: 12) {
+            Text("Rolling Expiration (Snapchat Mode)")
+              .font(.system(size: 18, weight: .bold))
+              .foregroundColor(.white)
+
+            Text("Automatically archive memories X days after they are posted.")
+              .font(.system(size: 14))
+              .foregroundColor(.gray)
+
+            Picker("Rolling Expiry", selection: $rollingExpiryDays) {
+              Text("Never").tag(0)
+              Text("1 Day (24 hrs)").tag(1)
+              Text("7 Days").tag(7)
+              Text("30 Days").tag(30)
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            .padding(.top, 8)
+          }
+          .padding()
+          .background(Color.white.opacity(0.05))
+          .cornerRadius(12)
+
+          // Option C: Room Expiration
+          VStack(alignment: .leading, spacing: 12) {
+            Toggle(isOn: $expirationDateEnabled) {
+              VStack(alignment: .leading, spacing: 4) {
+                Text("Scheduled Room Closure")
+                  .font(.system(size: 18, weight: .bold))
+                  .foregroundColor(.white)
+
+                Text("Lock the entire room into a read-only archive state after a specific date.")
+                  .font(.system(size: 14))
+                  .foregroundColor(.gray)
+              }
+            }
+            .tint(.blue)
+
+            if expirationDateEnabled {
+              DatePicker(
+                "Closure Date",
+                selection: $expirationDate,
+                in: Date()...,
+                displayedComponents: [.date]
+              )
+              .datePickerStyle(GraphicalDatePickerStyle())
+              .colorScheme(.dark)
+              .padding()
+              .background(Color.white.opacity(0.1))
+              .cornerRadius(12)
+              .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+          }
+          .padding()
+          .background(Color.white.opacity(0.05))
+          .cornerRadius(12)
+        }
+      }
+    }
+    .padding(.horizontal, 24)
+  }
+
+  // --- NEW STEP 5: Collaborator Group ---
+  var stepFiveView: some View {
+    VStack(alignment: .leading, spacing: 24) {
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Invite Friends")
+          .font(.system(size: 28, weight: .bold))
+          .foregroundColor(.white)
+        Text("Add people and assign them roles (Viewer or Contributor).")
+          .font(.system(size: 16))
+          .foregroundColor(.gray)
+      }
+
+      // Selected Collaborator Chips
+      if !collaborators.isEmpty {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 8) {
+            ForEach(collaborators, id: \.self) { collab in
+              Menu {
+                Button {
+                  updateRole(for: collab.email, role: .viewer)
+                } label: {
+                  Label("Set as Viewer", systemImage: "eye")
+                }
+                Button {
+                  updateRole(for: collab.email, role: .contributor)
+                } label: {
+                  Label("Set as Contributor", systemImage: "pencil")
+                }
+                Divider()
+                Button(role: .destructive) {
+                  collaborators.removeAll { $0.email == collab.email }
+                } label: {
+                  Label("Remove", systemImage: "trash")
+                }
+              } label: {
+                HStack(spacing: 6) {
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text(collab.email)
+                      .font(.system(size: 14, weight: .medium))
+                    Text(collab.role.rawValue.capitalized)
+                      .font(.system(size: 10))
+                      .opacity(0.8)
+                  }
+                  .foregroundColor(.white)
+
+                  Image(systemName: "chevron.down")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.6))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                  collab.role == .contributor ? Color.blue.opacity(0.3) : Color.purple.opacity(0.3)
+                )
+                .clipShape(Capsule())
+                .overlay(
+                  Capsule().stroke(
+                    collab.role == .contributor
+                      ? Color.blue.opacity(0.5) : Color.purple.opacity(0.5), lineWidth: 1)
+                )
+              }
+            }
+          }
+        }
+      }
+
+      // Input Field
+      HStack {
+        TextField("Friend's Email Address", text: $newCollaboratorEmail)
+          .padding()
+          .background(Color.white.opacity(0.1))
+          .cornerRadius(12)
+          .foregroundColor(.white)
+          .font(.system(size: 16))
+          .keyboardType(.emailAddress)
+          .autocapitalization(.none)
+          .onSubmit {
+            addCollaborator()
+          }
+
+        Button(action: addCollaborator) {
+          Image(systemName: "plus.circle.fill")
+            .font(.system(size: 28))
+            .foregroundColor(newCollaboratorEmail.isEmpty ? .gray : .blue)
+        }
+        .disabled(newCollaboratorEmail.isEmpty)
+      }
+    }
+    .padding(.horizontal, 24)
+  }
+
+  private func addCollaborator() {
+    let email = newCollaboratorEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !email.isEmpty else { return }
+
+    if !collaborators.contains(where: { $0.email == email }) {
+      withAnimation {
+        collaborators.append(Collaborator(email: email, role: .contributor))  // Default: Contributor
+        newCollaboratorEmail = ""
+      }
+    }
+  }
+
+  private func updateRole(for email: String, role: CollaboratorRole) {
+    if let index = collaborators.firstIndex(where: { $0.email == email }) {
+      withAnimation {
+        collaborators[index].role = role
+      }
+    }
+  }
 }
 
 #Preview {
-  CreateRoomFlowView { _, _, _, _, _, _, _, _ in }
+
+  CreateRoomFlowView { _, _, _, _, _, _, _, _, _, _, _, _ in }
 }

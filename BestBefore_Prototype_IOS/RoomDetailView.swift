@@ -28,10 +28,12 @@ struct RoomDetailView: View {
   @State private var showEditRoom = false
   @State private var showShowroom = false  // Toggle showroom gallery
   @State private var showRoomInfo = false
+  @State private var showVault = false
   @State private var showUnlockToast = false
 
   // Real Data State (Synced with Backend)
   @State private var memories: [MemoryItem] = []
+  @State private var archivedMemories: [MemoryItem] = []
   @State private var isLoading = false
   @State private var errorMessage: String?
   @State private var showAlert = false
@@ -43,27 +45,42 @@ struct RoomDetailView: View {
   @State private var recordingTime = 0.0
   @State private var audioTimer: Timer?
 
+  private var isExpired: Bool {
+    guard let expDate = currentRoom.expirationDate else { return false }
+    return Date() > expDate
+  }
+
   private var isOwner: Bool {
     guard context == .hallway else { return false }  // Force read-only in Roaming
 
-    guard let userEmail = AuthService.shared.currentUser?.email else {
-      print("DEBUG: isOwner - CURRENT USER EMAIL MISSING")
-      return false
-    }
-
-    guard let roomOwnerEmail = currentRoom.ownerEmail else {
-      print("DEBUG: isOwner - ROOM OWNER EMAIL MISSING")
+    guard let userEmail = AuthService.shared.currentUser?.email,
+      let roomOwnerEmail = currentRoom.ownerEmail
+    else {
       return false
     }
 
     let normalizedUser = userEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     let normalizedRoom = roomOwnerEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
-    if normalizedUser != normalizedRoom {
-      print("DEBUG: isOwner - MISMATCH. User: '\(normalizedUser)' vs Room: '\(normalizedRoom)'")
+    return normalizedUser == normalizedRoom
+  }
+
+  // NEW: Determines if the user is an owner or a registered collaborator
+  private var canContribute: Bool {
+    guard context == .hallway else { return false }
+    if isOwner { return true }
+
+    guard
+      let userEmail = AuthService.shared.currentUser?.email.trimmingCharacters(
+        in: .whitespacesAndNewlines
+      ).lowercased()
+    else {
+      return false
     }
 
-    return normalizedUser == normalizedRoom
+    return currentRoom.collaborators.contains {
+      $0.email.lowercased() == userEmail && $0.role == .contributor
+    }
   }
 
   private var accentColor: Color {
@@ -76,7 +93,7 @@ struct RoomDetailView: View {
   var body: some View {
     ZStack {
       // Dynamic Background
-      AnimatedBackgroundView()
+      AnimatedBackgroundView(theme: currentRoom.theme)
         .ignoresSafeArea()
 
       VStack(alignment: .leading, spacing: 0) {
@@ -95,14 +112,35 @@ struct RoomDetailView: View {
           Spacer()
 
           HStack(spacing: 20) {
+            // Archive Vault Button
+            Button(action: {
+              if currentRoom.isLocked {
+                alertMessage = "Vault is locked until the time capsule opens."
+                showAlert = true
+              } else {
+                showVault = true
+              }
+            }) {
+              Image(systemName: "archivebox.fill")
+                .foregroundColor(accentColor)
+            }
+
             // Showroom Button
-            Button(action: { showShowroom = true }) {
+            Button(action: {
+              if currentRoom.isLocked {
+                alertMessage = "Showroom is locked until the time capsule opens."
+                showAlert = true
+              } else {
+                showShowroom = true
+              }
+            }) {
               Image(systemName: "square.grid.2x2.fill")
                 .foregroundColor(accentColor)
             }
 
             if isOwner {
               Menu {
+                Button("Dump Active Memories", systemImage: "archivebox") { dumpMemories() }
                 Button("Room Details", systemImage: "info.circle") { showRoomInfo = true }
                 Button("Edit Room", systemImage: "pencil") { showEditRoom = true }
                 Button("Delete Room", systemImage: "trash", role: .destructive) { deleteRoom() }
@@ -138,6 +176,16 @@ struct RoomDetailView: View {
                   .font(.system(size: 28, weight: .bold))
                   .foregroundColor(.white)
                   .multilineTextAlignment(.center)
+
+                if isExpired {
+                  Text("Expired Archive")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white.opacity(0.8))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.red.opacity(0.8))
+                    .clipShape(Capsule())
+                }
 
                 if currentRoom.isTimeCapsule && isLockedState {
                   VStack(spacing: 8) {
@@ -182,124 +230,167 @@ struct RoomDetailView: View {
                   .background(accentColor.opacity(0.1))
                   .clipShape(Capsule())
                 }
+
+                // Collaborator Summary Row
+                if !currentRoom.collaborators.isEmpty {
+                  Button(action: { showRoomInfo = true }) {
+                    HStack(spacing: 8) {
+                      Image(systemName: "person.2.fill")
+                        .font(.system(size: 12))
+                      Text("\(currentRoom.collaborators.count) People Invited")
+                        .font(.system(size: 12, weight: .bold))
+
+                      HStack(spacing: -8) {
+                        ForEach(currentRoom.collaborators.prefix(3), id: \.self) { collab in
+                          Circle()
+                            .fill(collab.role == .contributor ? Color.blue : Color.purple)
+                            .frame(width: 20, height: 20)
+                            .overlay(Circle().stroke(Color.black, lineWidth: 1))
+                        }
+                      }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.1))
+                    .clipShape(Capsule())
+                  }
+                  .padding(.top, 4)
+                }
               }
               .padding(.top, 20)
 
-              // Memory Grid
-              // Memory Grid (Owner Only)
-              if isOwner {
-                VStack(alignment: .leading, spacing: 16) {
-                  Text("Memories")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.leading, 4)
+              // Memory Grid (Owner or Collaborator)
+              if canContribute {
+                if isExpired {
+                  VStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "lock.fill")
+                      .font(.system(size: 32))
+                      .foregroundColor(.white.opacity(0.6))
+                    Text("This room is expired.\nNo new memories can be added.")
+                      .font(.system(size: 16))
+                      .foregroundColor(.white.opacity(0.6))
+                      .multilineTextAlignment(.center)
+                  }
+                  .padding(.vertical, 40)
+                } else {
+                  VStack(alignment: .leading, spacing: 16) {
+                    Text("Memories")
+                      .font(.system(size: 20, weight: .bold))
+                      .foregroundColor(.white)
+                      .padding(.leading, 4)
 
-                  LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16)
+                    {
 
-                    // Photo Picker Button
-                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                      GlassActionButton(
-                        title: isLockedState ? "Deposit Photo" : "Add Photo",
-                        icon: "photo.on.rectangle",
-                        color: accentColor)
-                    }
-                    .onChange(of: selectedPhotoItem) { _, newItem in
-                      Task {
-                        print("[DEBUG] Picker: Item selected")
-                        if let newItem = newItem {
-                          do {
-                            var finalImage: UIImage?
-
-                            // Try loading as Data
-                            if let data = try await newItem.loadTransferable(type: Data.self) {
-                              print("[DEBUG] Picker: Data loaded, size: \(data.count)")
-                              finalImage = UIImage(data: data)
-                            }
-
-                            if let uiImage = finalImage {
-                              print(
-                                "[DEBUG] Picker: UIImage successfully resolved (\(uiImage.size.width)x\(uiImage.size.height))"
-                              )
-                              let resized = resizeImage(uiImage, targetWidth: 800)
-                              if let compressedData = resized.jpegData(compressionQuality: 0.5) {
-                                print(
-                                  "[DEBUG] Picker: Resized/Compressed to \(compressedData.count) bytes"
-                                )
-                                let base64 = compressedData.base64EncodedString()
-                                await saveMemory(type: .photo, title: "Photo Drop", content: base64)
-                              }
-                            } else {
-                              print("[DEBUG] Picker: FAILED to load image data or create UIImage")
-                            }
-                          } catch {
-                            print("[DEBUG] Picker: ERROR during load: \(error)")
-                          }
-                        }
-                        await MainActor.run { selectedPhotoItem = nil }
+                      // Photo Picker Button
+                      PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        GlassActionButton(
+                          title: isLockedState ? "Deposit Photo" : "Add Photo",
+                          icon: "photo.on.rectangle",
+                          color: accentColor)
                       }
-                    }
+                      .onChange(of: selectedPhotoItem) { _, newItem in
+                        Task {
+                          print("[DEBUG] Picker: Item selected")
+                          if let newItem = newItem {
+                            do {
+                              var finalImage: UIImage?
 
-                    Button(action: { showNoteEditor = true }) {
-                      GlassActionButton(
-                        title: isLockedState ? "Deposit Note" : "Write Note",
-                        icon: "square.and.pencil",
-                        color: .purple)
-                    }
+                              // Try loading as Data
+                              if let data = try await newItem.loadTransferable(type: Data.self) {
+                                print("[DEBUG] Picker: Data loaded, size: \(data.count)")
+                                finalImage = UIImage(data: data)
+                              }
 
-                    // Video Picker Button
-                    PhotosPicker(selection: $selectedVideoItem, matching: .videos) {
-                      GlassActionButton(
-                        title: isLockedState ? "Deposit Video" : "Add Video",
-                        icon: "film.fill",
-                        color: .orange)
-                    }
-                    .onChange(of: selectedVideoItem) { _, newItem in
-                      Task {
-                        if let newItem = newItem {
-                          print("[DEBUG] Video Picker: Item selected")
-                          do {
-                            if let data = try await newItem.loadTransferable(type: Data.self) {
-                              print("[DEBUG] Video Picker: Data loaded, size: \(data.count) bytes")
-                              if data.count < 15 * 1024 * 1024 {  // 15MB Limit
-                                let base64 = data.base64EncodedString()
-                                await saveMemory(type: .video, title: "Video Drop", content: base64)
+                              if let uiImage = finalImage {
+                                print(
+                                  "[DEBUG] Picker: UIImage successfully resolved (\(uiImage.size.width)x\(uiImage.size.height))"
+                                )
+                                let resized = resizeImage(uiImage, targetWidth: 800)
+                                if let compressedData = resized.jpegData(compressionQuality: 0.5) {
+                                  print(
+                                    "[DEBUG] Picker: Resized/Compressed to \(compressedData.count) bytes"
+                                  )
+                                  let base64 = compressedData.base64EncodedString()
+                                  await saveMemory(
+                                    type: .photo, title: "Photo Drop", content: base64)
+                                }
                               } else {
-                                await MainActor.run {
-                                  alertMessage = "Video too large (Max 15MB)"
-                                  showAlert = true
+                                print("[DEBUG] Picker: FAILED to load image data or create UIImage")
+                              }
+                            } catch {
+                              print("[DEBUG] Picker: ERROR during load: \(error)")
+                            }
+                          }
+                          await MainActor.run { selectedPhotoItem = nil }
+                        }
+                      }
+
+                      Button(action: { showNoteEditor = true }) {
+                        GlassActionButton(
+                          title: isLockedState ? "Deposit Note" : "Write Note",
+                          icon: "square.and.pencil",
+                          color: .purple)
+                      }
+
+                      // Video Picker Button
+                      PhotosPicker(selection: $selectedVideoItem, matching: .videos) {
+                        GlassActionButton(
+                          title: isLockedState ? "Deposit Video" : "Add Video",
+                          icon: "film.fill",
+                          color: .orange)
+                      }
+                      .onChange(of: selectedVideoItem) { _, newItem in
+                        Task {
+                          if let newItem = newItem {
+                            print("[DEBUG] Video Picker: Item selected")
+                            do {
+                              if let data = try await newItem.loadTransferable(type: Data.self) {
+                                print(
+                                  "[DEBUG] Video Picker: Data loaded, size: \(data.count) bytes")
+                                if data.count < 15 * 1024 * 1024 {  // 15MB Limit
+                                  let base64 = data.base64EncodedString()
+                                  await saveMemory(
+                                    type: .video, title: "Video Drop", content: base64)
+                                } else {
+                                  await MainActor.run {
+                                    alertMessage = "Video too large (Max 15MB)"
+                                    showAlert = true
+                                  }
                                 }
                               }
+                            } catch {
+                              print("[DEBUG] Video Picker Error: \(error)")
                             }
-                          } catch {
-                            print("[DEBUG] Video Picker Error: \(error)")
                           }
+                          await MainActor.run { selectedVideoItem = nil }
                         }
-                        await MainActor.run { selectedVideoItem = nil }
                       }
-                    }
 
-                    // Music File Importer Button
-                    Button(action: { showFileImporter = true }) {
-                      GlassActionButton(
-                        title: isLockedState ? "Deposit Music" : "Add Music",
-                        icon: "music.note",
-                        color: .pink)
-                    }
+                      // Music File Importer Button
+                      Button(action: { showFileImporter = true }) {
+                        GlassActionButton(
+                          title: isLockedState ? "Deposit Music" : "Add Music",
+                          icon: "music.note",
+                          color: .pink)
+                      }
 
-                    Button(action: { showAudioRecorder = true }) {
-                      GlassActionButton(
-                        title: isLockedState ? "Deposit Audio" : "Record Audio",
-                        icon: "mic.fill",
-                        color: .red)
-                    }
+                      Button(action: { showAudioRecorder = true }) {
+                        GlassActionButton(
+                          title: isLockedState ? "Deposit Audio" : "Record Audio",
+                          icon: "mic.fill",
+                          color: .red)
+                      }
 
-                    if !isLockedState {
-                      Button(action: { showShowroom = true }) {
-                        GlassActionButton(title: "View All", icon: "archivebox.fill", color: .green)
+                      if !isLockedState {
+                        Button(action: { showShowroom = true }) {
+                          GlassActionButton(
+                            title: "View All", icon: "archivebox.fill", color: .green)
+                        }
                       }
                     }
                   }
-                }
+                }  // close else !isExpired
               } else {
                 // Public view header (Explorer Mode)
                 HStack(spacing: 15) {
@@ -476,17 +567,26 @@ struct RoomDetailView: View {
 
     .sheet(isPresented: $showEditRoom) {
       EditRoomView(room: currentRoom) {
-        name, isPrivate, isTimeCapsule, days, hours, mins, date, music in
+        name, isPrivate, isTimeCapsule, days, hours, mins, date, music, theme, expirationDate,
+        rollingExpiryDays, collaborators in
         updateRoom(
           name: name, isPrivate: isPrivate, isTimeCapsule: isTimeCapsule,
           days: days, hours: hours, mins: mins,
           unlockDate: date,
-          backgroundMusic: music)
+          backgroundMusic: music,
+          theme: theme,
+          expirationDate: expirationDate,
+          rollingExpiryDays: rollingExpiryDays,
+          collaborators: collaborators)
       }
     }
 
     .fullScreenCover(isPresented: $showShowroom) {
       MemoryShowroomView(memories: memories)
+    }
+
+    .fullScreenCover(isPresented: $showVault) {
+      MemoryShowroomView(memories: archivedMemories)
     }
 
     .sheet(isPresented: $showRoomInfo) {
@@ -575,16 +675,16 @@ struct RoomDetailView: View {
           if selectedFile.startAccessingSecurityScopedResource() {
             defer { selectedFile.stopAccessingSecurityScopedResource() }
             let data = try Data(contentsOf: selectedFile)
-             print("[DEBUG] Music Import: Loaded \(data.count) bytes")
-             if data.count < 15 * 1024 * 1024 {
-               let base64 = data.base64EncodedString()
-               await saveMemory(type: .music, title: selectedFile.lastPathComponent, content: base64)
-             } else {
-                await MainActor.run {
-                  alertMessage = "Audio file too large (Max 15MB)"
-                  showAlert = true
-                }
-             }
+            print("[DEBUG] Music Import: Loaded \(data.count) bytes")
+            if data.count < 15 * 1024 * 1024 {
+              let base64 = data.base64EncodedString()
+              await saveMemory(type: .music, title: selectedFile.lastPathComponent, content: base64)
+            } else {
+              await MainActor.run {
+                alertMessage = "Audio file too large (Max 15MB)"
+                showAlert = true
+              }
+            }
           }
         } catch {
           print("File Import Error: \(error)")
@@ -599,14 +699,33 @@ struct RoomDetailView: View {
     isLoading = true
     do {
       let fetched = try await Database.shared.getMemories(for: currentRoom.id)
+      let archived = try await Database.shared.getArchivedMemories(for: currentRoom.id)
       await MainActor.run {
         self.memories = fetched
+        self.archivedMemories = archived
         self.isLoading = false
       }
     } catch {
       await MainActor.run {
         self.errorMessage = error.localizedDescription
         self.isLoading = false
+      }
+    }
+  }
+
+  private func dumpMemories() {
+    isLoading = true
+    Task {
+      do {
+        try await Database.shared.dumpMemories(for: currentRoom.id)
+        await fetchMemories()
+      } catch {
+        print("Dump failed: \(error)")
+        await MainActor.run {
+          alertMessage = "Failed to archive memories."
+          showAlert = true
+          isLoading = false
+        }
       }
     }
   }
@@ -680,7 +799,11 @@ struct RoomDetailView: View {
   private func updateRoom(
     name: String, isPrivate: Bool, isTimeCapsule: Bool, days: Int, hours: Int, mins: Int,
     unlockDate: Date?,  // NEW
-    backgroundMusic: String?
+    backgroundMusic: String?,
+    theme: String,
+    expirationDate: Date?,
+    rollingExpiryDays: Int,
+    collaborators: [Collaborator]
   ) {
     Task {
       do {
@@ -690,7 +813,11 @@ struct RoomDetailView: View {
           capsuleDurationHours: hours,
           capsuleDurationMinutes: mins,
           unlockDate: unlockDate,  // NEW
-          backgroundMusic: backgroundMusic)
+          backgroundMusic: backgroundMusic,
+          theme: theme,
+          expirationDate: expirationDate,
+          rollingExpiryDays: rollingExpiryDays,
+          collaborators: collaborators)
         // Update local state
         await MainActor.run {
           currentRoom.name = name
@@ -700,6 +827,10 @@ struct RoomDetailView: View {
           currentRoom.capsuleDurationHours = hours
           currentRoom.capsuleDurationMinutes = mins
           currentRoom.unlockDate = unlockDate  // NEW
+          currentRoom.theme = theme
+          currentRoom.expirationDate = expirationDate
+          currentRoom.rollingExpiryDays = rollingExpiryDays
+          currentRoom.collaborators = collaborators
 
           // Re-calc unlock date if Duration mode
           if isTimeCapsule, unlockDate == nil {

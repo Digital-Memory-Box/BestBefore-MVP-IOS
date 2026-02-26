@@ -1,5 +1,15 @@
 import Foundation
 
+enum CollaboratorRole: String, Codable {
+  case viewer
+  case contributor
+}
+
+struct Collaborator: Codable, Hashable {
+  var email: String
+  var role: CollaboratorRole
+}
+
 struct RoomObject: Identifiable, Hashable, Codable {
   var id: String
   var name: String
@@ -11,7 +21,11 @@ struct RoomObject: Identifiable, Hashable, Codable {
   var capsuleDurationHours: Int
   var capsuleDurationMinutes: Int
   var backgroundMusic: String?
-  var unlockDate: Date?  // NEW
+  var unlockDate: Date?
+  var theme: String
+  var expirationDate: Date?
+  var rollingExpiryDays: Int
+  var collaborators: [Collaborator]  // CHANGED from [String]
   var createdAt: Date = Date()
 
   init(
@@ -24,8 +38,12 @@ struct RoomObject: Identifiable, Hashable, Codable {
     capsuleDurationDays: Int = 21,
     capsuleDurationHours: Int = 0,
     capsuleDurationMinutes: Int = 0,
-    unlockDate: Date? = nil,  // NEW
+    unlockDate: Date? = nil,
     backgroundMusic: String? = nil,
+    theme: String = "default",
+    expirationDate: Date? = nil,
+    rollingExpiryDays: Int = 0,
+    collaborators: [Collaborator] = [],  // CHANGED
     createdAt: Date = Date()
   ) {
     self.id = id
@@ -37,8 +55,12 @@ struct RoomObject: Identifiable, Hashable, Codable {
     self.capsuleDurationDays = capsuleDurationDays
     self.capsuleDurationHours = capsuleDurationHours
     self.capsuleDurationMinutes = capsuleDurationMinutes
-    self.unlockDate = unlockDate  // NEW
+    self.unlockDate = unlockDate
     self.backgroundMusic = backgroundMusic
+    self.theme = theme
+    self.expirationDate = expirationDate
+    self.rollingExpiryDays = rollingExpiryDays
+    self.collaborators = collaborators
     self.createdAt = createdAt
 
     // Auto-calculate unlockDate from duration if missing but capsule enabled
@@ -53,7 +75,6 @@ struct RoomObject: Identifiable, Hashable, Codable {
 
   var isLocked: Bool {
     guard isTimeCapsule else { return false }
-    // If unlockDate exists, check it. Otherwise fallback to old duration logic.
     if let unlockDate = unlockDate {
       return Date() < unlockDate
     }
@@ -62,18 +83,13 @@ struct RoomObject: Identifiable, Hashable, Codable {
 
   var secondsRemaining: Double {
     guard isTimeCapsule else { return 0 }
-
-    // Priority: unlockDate
     if let unlockDate = unlockDate {
       return max(0, unlockDate.timeIntervalSince(Date()))
     }
-
-    // Fallback: Duration
     var components = DateComponents()
     components.day = capsuleDurationDays
     components.hour = capsuleDurationHours
     components.minute = capsuleDurationMinutes
-
     let targetDate = Calendar.current.date(byAdding: components, to: createdAt) ?? createdAt
     return max(0, targetDate.timeIntervalSince(Date()))
   }
@@ -105,15 +121,17 @@ struct MemoryItem: Identifiable, Codable {
   let title: String
   let date: Date
   var content: String?  // URL or Note Text
+  var isArchived: Bool = false  // NEW
 
   init(
     id: String = UUID().uuidString, type: MemoryType, title: String, date: Date = Date(),
-    content: String? = nil
+    content: String? = nil, isArchived: Bool = false
   ) {
     self.id = id
     self.type = type
     self.title = title
     self.date = date
     self.content = content
+    self.isArchived = isArchived
   }
 }

@@ -75,6 +75,45 @@ struct RoomInfoSheet: View {
         .background(Color.white.opacity(0.05))
         .cornerRadius(16)
 
+        // Collaborators Section
+        VStack(alignment: .leading, spacing: 16) {
+          Text("Collaborators")
+            .font(.headline)
+            .foregroundColor(.blue)
+
+          if room.collaborators.isEmpty {
+            Text("No collaborators invited yet.")
+              .font(.subheadline)
+              .foregroundColor(.gray)
+          } else {
+            VStack(spacing: 12) {
+              ForEach(room.collaborators, id: \.self) { collab in
+                HStack {
+                  Image(
+                    systemName: collab.role == .contributor
+                      ? "pencil.circle.fill" : "eye.circle.fill"
+                  )
+                  .foregroundColor(collab.role == .contributor ? .blue : .purple)
+
+                  VStack(alignment: .leading) {
+                    Text(collab.email)
+                      .font(.system(size: 14, weight: .medium))
+                      .foregroundColor(.white)
+                    Text(collab.role.rawValue.capitalized)
+                      .font(.system(size: 10))
+                      .foregroundColor(.gray)
+                  }
+                  Spacer()
+                }
+              }
+            }
+          }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.05))
+        .cornerRadius(16)
+
         Spacer()
       }
       .padding(.horizontal, 24)

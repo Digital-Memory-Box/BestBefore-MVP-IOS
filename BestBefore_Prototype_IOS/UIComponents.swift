@@ -87,3 +87,35 @@ struct DurationButton: View {
     }
   }
 }
+
+struct ThemeOption: View {
+  let title: String
+  let color: Color
+  let isSelected: Bool
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      VStack(spacing: 12) {
+        Circle()
+          .fill(
+            LinearGradient(
+              colors: [color.opacity(0.5), color],
+              startPoint: .topLeading,
+              endPoint: .bottomTrailing
+            )
+          )
+          .frame(width: 60, height: 60)
+          .overlay(
+            Circle()
+              .stroke(isSelected ? Color.white : Color.clear, lineWidth: 3)
+          )
+          .shadow(color: isSelected ? color.opacity(0.5) : .clear, radius: 10)
+
+        Text(title)
+          .font(.system(size: 14, weight: isSelected ? .bold : .medium))
+          .foregroundColor(isSelected ? .white : .gray)
+      }
+    }
+  }
+}
