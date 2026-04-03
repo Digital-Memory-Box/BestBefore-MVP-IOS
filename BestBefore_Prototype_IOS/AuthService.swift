@@ -59,8 +59,8 @@ final class AuthService {
     }
   }
 
-  // Adjust URL to your backend
-  private let baseURL = URL(string: "http://localhost:3000")!
+  // Production URL pointing to Railway backend
+  private let baseURL = URL(string: "https://bestbefore.up.railway.app")!
 
   // MARK: - Signup
   func signup(name: String?, email: String, password: String) async throws -> AuthUser {

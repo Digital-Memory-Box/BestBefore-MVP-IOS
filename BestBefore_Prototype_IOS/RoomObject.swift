@@ -10,10 +10,17 @@ struct Collaborator: Codable, Hashable {
   var role: CollaboratorRole
 }
 
+struct LinkedRoom: Codable, Hashable {
+  var roomId: String
+  var type: String
+}
+
 struct RoomObject: Identifiable, Hashable, Codable {
   var id: String
   var name: String
   var ownerEmail: String?
+  var description: String?
+  var tags: [String]
   var imageName: String?
   var isPrivate: Bool
   var isTimeCapsule: Bool
@@ -24,14 +31,18 @@ struct RoomObject: Identifiable, Hashable, Codable {
   var unlockDate: Date?
   var theme: String
   var expirationDate: Date?
+  var uploadStartDate: Date?
   var rollingExpiryDays: Int
-  var collaborators: [Collaborator]  // CHANGED from [String]
+  var collaborators: [Collaborator]
+  var linkedRooms: [LinkedRoom]
   var createdAt: Date = Date()
 
   init(
     id: String = UUID().uuidString,
     name: String,
     ownerEmail: String?,
+    description: String? = nil,
+    tags: [String] = [],
     imageName: String? = nil,
     isPrivate: Bool = false,
     isTimeCapsule: Bool = false,
@@ -42,13 +53,17 @@ struct RoomObject: Identifiable, Hashable, Codable {
     backgroundMusic: String? = nil,
     theme: String = "default",
     expirationDate: Date? = nil,
+    uploadStartDate: Date? = nil,
     rollingExpiryDays: Int = 0,
-    collaborators: [Collaborator] = [],  // CHANGED
+    collaborators: [Collaborator] = [],
+    linkedRooms: [LinkedRoom] = [],
     createdAt: Date = Date()
   ) {
     self.id = id
     self.name = name
     self.ownerEmail = ownerEmail
+    self.description = description
+    self.tags = tags
     self.imageName = imageName
     self.isPrivate = isPrivate
     self.isTimeCapsule = isTimeCapsule
@@ -59,8 +74,10 @@ struct RoomObject: Identifiable, Hashable, Codable {
     self.backgroundMusic = backgroundMusic
     self.theme = theme
     self.expirationDate = expirationDate
+    self.uploadStartDate = uploadStartDate
     self.rollingExpiryDays = rollingExpiryDays
     self.collaborators = collaborators
+    self.linkedRooms = linkedRooms
     self.createdAt = createdAt
 
     // Auto-calculate unlockDate from duration if missing but capsule enabled

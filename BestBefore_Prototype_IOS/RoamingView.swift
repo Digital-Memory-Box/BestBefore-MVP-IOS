@@ -3,8 +3,19 @@ import SwiftUI
 struct RoamingView: View {
   @State private var rooms: [RoomObject] = []
   @State private var isLoading = false
-
+  @State private var searchText = ""
+  @Binding var isMusicPlayerActive: Bool
+  var onScan: () -> Void
   var onRoomSelected: (RoomObject) -> Void
+
+  private var filteredRooms: [RoomObject] {
+    if searchText.isEmpty { return rooms }
+    return rooms.filter {
+      $0.name.localizedCaseInsensitiveContains(searchText)
+        || ($0.ownerEmail?.localizedCaseInsensitiveContains(searchText) ?? false)
+        || $0.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
+    }
+  }
 
   var body: some View {
     ZStack {
@@ -17,19 +28,58 @@ struct RoamingView: View {
             Text("Roaming")
               .font(.system(size: 32, weight: .bold))
               .foregroundColor(.white)
+            
             Spacer()
-            if isLoading {
-              ProgressView().tint(.white)
-            } else {
-              Text("Discover")
-                .font(.system(size: 22))
-                .foregroundColor(.gray)
+            
+            HStack(spacing: 20) {
+              Button(action: {
+                withAnimation(.spring()) {
+                  isMusicPlayerActive.toggle()
+                }
+              }) {
+                Image(systemName: "music.note.list")
+                  .font(.system(size: 22))
+                  .foregroundColor(.white)
+              }
+              
+              if isLoading {
+                ProgressView().tint(.white)
+              } else {
+                Button(action: onScan) {
+                  HStack(spacing: 8) {
+                    Image(systemName: "qrcode.viewfinder")
+                      .font(.system(size: 22))
+                    Text("Scan")
+                      .font(.system(size: 18, weight: .medium))
+                  }
+                  .foregroundColor(.white)
+                }
+              }
             }
           }
           .padding(.horizontal, 24)
           .padding(.top, 20)
 
-          if rooms.isEmpty && !isLoading {
+          // Search Bar
+          HStack {
+            Image(systemName: "magnifyingglass")
+              .foregroundColor(.gray)
+            TextField("Search by name, owner, or tags...", text: $searchText)
+              .foregroundColor(.white)
+              .autocapitalization(.none)
+            if !searchText.isEmpty {
+              Button(action: { searchText = "" }) {
+                Image(systemName: "xmark.circle.fill")
+                  .foregroundColor(.gray)
+              }
+            }
+          }
+          .padding(10)
+          .background(Color.white.opacity(0.1))
+          .cornerRadius(10)
+          .padding(.horizontal, 24)
+
+          if filteredRooms.isEmpty && !isLoading {
             VStack(spacing: 20) {
               Image(systemName: "globe")
                 .font(.system(size: 50))
@@ -41,7 +91,7 @@ struct RoamingView: View {
             .padding(.top, 100)
           } else {
             // Featured
-            if let featured = rooms.first {
+            if let featured = filteredRooms.first {
               RoamingCardView(room: featured, height: 320)
                 .padding(.horizontal, 24)
                 .onTapGesture {
@@ -51,7 +101,7 @@ struct RoamingView: View {
 
             // Others
             LazyVStack(spacing: 24) {
-              ForEach(rooms.dropFirst()) { room in
+              ForEach(filteredRooms.dropFirst()) { room in
                 RoamingCardView(room: room, height: 220)
                   .padding(.horizontal, 24)
                   .onTapGesture {
@@ -100,9 +150,12 @@ struct RoamingCardView: View {
           .frame(height: height)
           .clipped()
       } else {
-        RoundedRectangle(cornerRadius: 24)
-          .fill(Color.gray.opacity(0.3))
-          .frame(height: height)
+        UnsplashImageView(
+          query: room.tags.first ?? room.name,
+          width: UIScreen.main.bounds.width - 48,
+          height: height,
+          contentMode: .fill
+        )
       }
 
       // Gradient Overlay
@@ -133,8 +186,8 @@ struct RoamingCardView: View {
 
         if room.isLocked {
           HStack(spacing: 4) {
-             Image(systemName: "lock.fill")
-             Text("Locked")
+            Image(systemName: "lock.fill")
+            Text("Locked")
           }
           .font(.system(size: 12, weight: .bold))
           .foregroundColor(.orange)
@@ -150,5 +203,5 @@ struct RoamingCardView: View {
 }
 
 #Preview {
-  RoamingView(onRoomSelected: { _ in })
+  RoamingView(isMusicPlayerActive: .constant(false), onScan: {}, onRoomSelected: { _ in })
 }

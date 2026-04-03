@@ -5,6 +5,7 @@ struct OrbMenuPremium: View {
 
   var onAdd: () -> Void = {}
   var onChat: () -> Void = {}
+  var onScan: () -> Void = {}
   var onProfile: () -> Void = {}
   var onSearch: () -> Void = {}
 
@@ -38,7 +39,7 @@ struct OrbMenuPremium: View {
           .offset(x: -135, y: 0)
 
           // Arc of three icons on the right (Vertically Aligned)
-          VStack(spacing: 55) {
+          VStack(spacing: 40) {
             // Envelope (Top)
             Button(action: onChat) {
               Image(systemName: "envelope.fill")
@@ -46,6 +47,7 @@ struct OrbMenuPremium: View {
                 .foregroundColor(.white)
             }
             .offset(x: -95)
+
 
             // Person (Center)
             Button(action: onProfile) {

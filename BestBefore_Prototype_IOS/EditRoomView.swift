@@ -4,9 +4,15 @@ struct EditRoomView: View {
   @Environment(\.dismiss) var dismiss
   let room: RoomObject
   var onSave:
-    (String, Bool, Bool, Int, Int, Int, Date?, String?, String, Date?, Int, [Collaborator]) -> Void
+    (
+      String, String, [String], Bool, Bool, Int, Int, Int, Date?, String?, String, Date?, Int,
+      [Collaborator]
+    ) -> Void
 
   @State private var roomName: String
+  @State private var descriptionText: String
+  @State private var tags: [String]
+  @State private var currentTag: String = ""
   @State private var isPrivate: Bool
   @State private var isTimeCapsule: Bool
   @State private var capsuleDuration: Int
@@ -25,6 +31,10 @@ struct EditRoomView: View {
   @State private var backgroundMusic: String?
   @State private var selectedTheme: String
 
+  private let presetTags = [
+    "trip", "music", "science", "party", "family", "education", "art", "gaming", "fitness", "food",
+  ]
+
   // Memory Dump Rules
   @State private var expirationDateEnabled: Bool
   @State private var expirationDate: Date
@@ -38,13 +48,16 @@ struct EditRoomView: View {
     room: RoomObject,
     onSave:
       @escaping (
-        String, Bool, Bool, Int, Int, Int, Date?, String?, String, Date?, Int, [Collaborator]
+        String, String, [String], Bool, Bool, Int, Int, Int, Date?, String?, String, Date?, Int,
+        [Collaborator]
       ) ->
       Void
   ) {
     self.room = room
     self.onSave = onSave
     _roomName = State(initialValue: room.name)
+    _descriptionText = State(initialValue: room.description ?? "")
+    _tags = State(initialValue: room.tags)
     _isPrivate = State(initialValue: room.isPrivate)
     _isTimeCapsule = State(initialValue: room.isTimeCapsule)
     _capsuleDuration = State(initialValue: room.capsuleDurationDays)
@@ -102,6 +115,99 @@ struct EditRoomView: View {
                 .background(Color.white.opacity(0.1))
                 .cornerRadius(12)
                 .foregroundColor(.white)
+            }
+
+            // Description
+            VStack(alignment: .leading, spacing: 12) {
+              Text("Description")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+              TextField("Description...", text: $descriptionText)
+                .padding()
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(12)
+                .foregroundColor(.white)
+            }
+
+            // Tags
+            VStack(alignment: .leading, spacing: 12) {
+              Text("Tags")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+              HStack {
+                TextField("Add a tag...", text: $currentTag)
+                  .padding()
+                  .background(Color.white.opacity(0.1))
+                  .cornerRadius(12)
+                  .foregroundColor(.white)
+                  .textInputAutocapitalization(.never)
+                  .disableAutocorrection(true)
+                  .onSubmit {
+                    let tag = currentTag.trimmingCharacters(in: .whitespacesAndNewlines)
+                      .lowercased()
+                    if !tag.isEmpty && !tags.contains(tag) {
+                      withAnimation { tags.append(tag) }
+                    }
+                    currentTag = ""
+                  }
+                Button(action: {
+                  let tag = currentTag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                  if !tag.isEmpty && !tags.contains(tag) {
+                    withAnimation { tags.append(tag) }
+                  }
+                  currentTag = ""
+                }) {
+                  Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundColor(currentTag.isEmpty ? .gray : .blue)
+                }
+                .disabled(currentTag.isEmpty)
+              }
+              if !tags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                  HStack {
+                    ForEach(tags, id: \.self) { tag in
+                      HStack(spacing: 4) {
+                        Text("#\(tag)")
+                          .font(.system(size: 14))
+                        Button(action: {
+                          withAnimation { tags.removeAll(where: { $0 == tag }) }
+                        }) {
+                          Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                        }
+                      }
+                      .padding(.horizontal, 10).padding(.vertical, 6)
+                      .background(Color.blue.opacity(0.3))
+                      .cornerRadius(16)
+                      .foregroundColor(.white)
+                    }
+                  }
+                }
+              }
+
+              // Preset Tags
+              ScrollView(.horizontal, showsIndicators: false) {
+                HStack {
+                  ForEach(presetTags, id: \.self) { tag in
+                    Button(action: {
+                      if !tags.contains(tag) {
+                        withAnimation { tags.append(tag) }
+                      }
+                    }) {
+                      Text("#\(tag)")
+                        .font(.system(size: 14, weight: .medium))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                          tags.contains(tag) ? Color.blue.opacity(0.8) : Color.white.opacity(0.1)
+                        )
+                        .foregroundColor(tags.contains(tag) ? .white : .gray)
+                        .cornerRadius(16)
+                    }
+                  }
+                }
+              }
             }
 
             // Privacy
@@ -438,6 +544,39 @@ struct EditRoomView: View {
                 ) {
                   backgroundMusic = "Vaporwave"
                 }
+
+                Divider().background(Color.white.opacity(0.1))
+                  .padding(.vertical, 8)
+
+                VStack(alignment: .leading, spacing: 8) {
+                  Text("Custom SoundCloud Link")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white.opacity(0.8))
+
+                  TextField(
+                    "Paste SoundCloud playlist or track URL",
+                    text: Binding(
+                      get: {
+                        if let music = backgroundMusic, music.contains("soundcloud.com") {
+                          return music
+                        }
+                        return ""
+                      },
+                      set: { backgroundMusic = $0.isEmpty ? nil : $0 }
+                    )
+                  )
+                  .padding()
+                  .background(Color.white.opacity(0.05))
+                  .cornerRadius(12)
+                  .foregroundColor(.blue)
+                  .font(.system(size: 14, design: .monospaced))
+                  .autocapitalization(.none)
+                  .disableAutocorrection(true)
+
+                  Text("Use this to play your custom SoundCloud playlist in this room.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.gray)
+                }
               }
             }
           }
@@ -450,7 +589,7 @@ struct EditRoomView: View {
           let finalDate = (lockMode == .date) ? targetDate : nil
           let finalExpiration = expirationDateEnabled ? expirationDate : nil
           onSave(
-            roomName, isPrivate, isTimeCapsule,
+            roomName, descriptionText, tags, isPrivate, isTimeCapsule,
             capsuleDuration, capsuleHours, capsuleMinutes,
             finalDate,
             backgroundMusic, selectedTheme, finalExpiration, rollingExpiryDays, collaborators)

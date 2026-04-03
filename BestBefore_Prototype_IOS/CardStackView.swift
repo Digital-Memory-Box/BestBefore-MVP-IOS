@@ -1,5 +1,62 @@
 import SwiftUI
 
+// Fetches a photo URL from Unsplash API based on a tag query
+struct UnsplashImageView: View {
+  let query: String
+  let width: CGFloat
+  let height: CGFloat
+  let contentMode: ContentMode
+
+  @State private var imageURL: URL? = nil
+
+  private static let clientID = "HrmrfwL1B9laPyoLeEA6_I5Nfm08GvRnEQL-OLqDeNA"
+
+  var body: some View {
+    Group {
+      if let url = imageURL {
+        AsyncImage(url: url) { phase in
+          switch phase {
+          case .success(let image):
+            image.resizable().aspectRatio(contentMode: contentMode)
+          default:
+            placeholder
+          }
+        }
+        .frame(width: width, height: height)
+        .clipped()
+      } else {
+        placeholder
+          .frame(width: width, height: height)
+      }
+    }
+    .task(id: query) {
+      await fetchImageURL()
+    }
+  }
+
+  private var placeholder: some View {
+    RoundedRectangle(cornerRadius: 24)
+      .fill(LinearGradient(
+        colors: [Color(red: 0.1, green: 0.1, blue: 0.18), Color(red: 0.08, green: 0.13, blue: 0.24)],
+        startPoint: .top, endPoint: .bottom
+      ))
+  }
+
+  private func fetchImageURL() async {
+    let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "memory"
+    guard let apiURL = URL(string: "https://api.unsplash.com/photos/random?query=\(encoded)&client_id=\(Self.clientID)") else { return }
+    do {
+      let (data, _) = try await URLSession.shared.data(from: apiURL)
+      if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+         let urls = json["urls"] as? [String: Any],
+         let regular = urls["regular"] as? String,
+         let url = URL(string: regular) {
+        await MainActor.run { imageURL = url }
+      }
+    } catch {}
+  }
+}
+
 struct CardStackView: View {
   let rooms: [RoomObject]
   @Binding var selectedIndex: Int
@@ -51,25 +108,18 @@ struct StackCardView: View {
   var body: some View {
     ZStack(alignment: .bottomLeading) {
       // Card Background
-      if let imageName = room.imageName,
-        let uiImage = UIImage(contentsOfFile: imageName)
-      {
+      if let imageName = room.imageName, let uiImage = UIImage(contentsOfFile: imageName) {
         Image(uiImage: uiImage)
           .resizable()
           .aspectRatio(contentMode: .fill)
           .frame(width: 180, height: 280)
           .clipped()
       } else {
-        RoundedRectangle(cornerRadius: 24)
-          .fill(
-            LinearGradient(
-              colors: [
-                Color(red: 0.1, green: 0.1, blue: 0.18), Color(red: 0.08, green: 0.13, blue: 0.24),
-              ],
-              startPoint: .top,
-              endPoint: .bottom
-            )
-          )
+        UnsplashImageView(
+          query: room.tags.first ?? room.name,
+          width: 180, height: 280,
+          contentMode: .fill
+        )
       }
 
       // Subtle Overlay for text readability

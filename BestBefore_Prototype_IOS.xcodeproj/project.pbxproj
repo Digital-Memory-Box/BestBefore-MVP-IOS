@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5224B0C22F7FBA7F004490F8 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 5224B0C12F7FBA7F004490F8 /* FirebaseMessaging */; };
 		5275F9902F1FDEE800634124 /* RiveRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 5275F98F2F1FDEE800634124 /* RiveRuntime */; };
 		529AD5172F1ED7D800940E71 /* Pow in Frameworks */ = {isa = PBXBuildFile; productRef = 529AD5162F1ED7D800940E71 /* Pow */; };
 		52A6A4342F2B964E007C8317 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 52A6A4332F2B964E007C8317 /* FirebaseAuth */; };
@@ -29,6 +30,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5224B0C22F7FBA7F004490F8 /* FirebaseMessaging in Frameworks */,
 				529AD5172F1ED7D800940E71 /* Pow in Frameworks */,
 				52A6A4342F2B964E007C8317 /* FirebaseAuth in Frameworks */,
 				5275F9902F1FDEE800634124 /* RiveRuntime in Frameworks */,
@@ -85,6 +87,7 @@
 				529AD5162F1ED7D800940E71 /* Pow */,
 				5275F98F2F1FDEE800634124 /* RiveRuntime */,
 				52A6A4332F2B964E007C8317 /* FirebaseAuth */,
+				5224B0C12F7FBA7F004490F8 /* FirebaseMessaging */,
 			);
 			productName = BestBefore_Prototype_IOS;
 			productReference = 523538862F0D69A600851633 /* BestBefore_Prototype_IOS.app */;
@@ -281,6 +284,9 @@
 				DEVELOPMENT_TEAM = FPW9B33CDU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "BestBefore-Prototype-IOS-Info.plist";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "BestBefore requests calendar access to suggest creating memory rooms for today's celebrations.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "BestBefore requests calendar access to suggest creating memory rooms for today's celebrations.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -313,6 +319,9 @@
 				DEVELOPMENT_TEAM = FPW9B33CDU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "BestBefore-Prototype-IOS-Info.plist";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "BestBefore requests calendar access to suggest creating memory rooms for today's celebrations.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "BestBefore requests calendar access to suggest creating memory rooms for today's celebrations.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -386,6 +395,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		5224B0C12F7FBA7F004490F8 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 52A6A42B2F2B9333007C8317 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
 		5275F98F2F1FDEE800634124 /* RiveRuntime */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 5275F98E2F1FDEE800634124 /* XCRemoteSwiftPackageReference "rive-ios" */;

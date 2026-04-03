@@ -1,3 +1,4 @@
+import EventKit
 import SwiftUI
 
 struct ProfileView: View {
@@ -17,6 +18,7 @@ struct ProfileView: View {
     ActivityItem(title: "Joined BestBefore", date: Date().addingTimeInterval(-86400 * 5)),
     ActivityItem(title: "Created first room", date: Date().addingTimeInterval(-86400 * 4)),
   ]
+  @State private var pendingCelebrations: [String] = []
 
   let themes = ["Default", "Glass", "Midnight", "Vibrant"]
   let colors: [Color] = [.blue, .purple, .pink, .orange, .green, .red]
@@ -237,6 +239,49 @@ struct ProfileView: View {
           }
         }
       }
+
+      // Memory Suggestions (Calendar)
+      VStack(alignment: .leading, spacing: 16) {
+        Text("Memory Suggestions")
+          .font(.system(size: 14, weight: .bold))
+          .foregroundColor(.gray)
+
+        if pendingCelebrations.isEmpty {
+          Text("No suggestions for today.")
+            .font(.system(size: 14))
+            .foregroundColor(.white.opacity(0.6))
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(12)
+        } else {
+          ForEach(pendingCelebrations, id: \.self) { celebration in
+            HStack {
+              VStack(alignment: .leading, spacing: 4) {
+                Text(celebration)
+                  .font(.system(size: 16, weight: .bold))
+                  .foregroundColor(.white)
+                Text("Today")
+                  .font(.system(size: 12))
+                  .foregroundColor(selectedColor)
+              }
+              Spacer()
+              Button(action: { createRoom(name: celebration) }) {
+                Text("Create")
+                  .font(.system(size: 14, weight: .bold))
+                  .padding(.horizontal, 16)
+                  .padding(.vertical, 8)
+                  .background(selectedColor)
+                  .foregroundColor(.white)
+                  .cornerRadius(8)
+              }
+            }
+            .padding()
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(12)
+          }
+        }
+      }
     }
   }
 
@@ -286,17 +331,6 @@ struct ProfileView: View {
         .disabled(newEmail.isEmpty && newPassword.isEmpty)
       }
 
-      VStack(alignment: .leading, spacing: 20) {
-        Text("App Preferences")
-          .font(.system(size: 18, weight: .bold))
-          .foregroundColor(.white)
-
-        Toggle("High Fidelity Mode", isOn: .constant(true))
-          .foregroundColor(.white)
-        Toggle("Spatial Audio", isOn: .constant(true))
-          .foregroundColor(.white)
-      }
-
       if let error = errorMessage {
         Text(error)
           .foregroundColor(.red)
@@ -335,9 +369,18 @@ struct ProfileView: View {
         let rooms = try await allRooms
         let mCount = try await count
 
+        // Fetch calendar suggestions
+        let celebrations = await CalendarService.shared.fetchTodayCelebrations()
+        let celebrationNames = celebrations.compactMap { $0.title }.filter { !$0.isEmpty }
+
         await MainActor.run {
           self.myRooms = rooms.filter { $0.ownerEmail == user.email }
           self.totalMemoryCount = mCount
+
+          // Only show celebrations that don't already have a room
+          self.pendingCelebrations = celebrationNames.filter { name in
+            !self.myRooms.contains(where: { $0.name.lowercased() == name.lowercased() })
+          }
         }
       } catch {
         print("Failed to load history or stats: \(error)")
@@ -403,6 +446,48 @@ struct ProfileView: View {
     // Content view handles the state change if we trigger it via a binding or notification
     // For now, we rely on the parent HallwayView/ContentView flow
     NotificationCenter.default.post(name: NSNotification.Name("UserLoggedOut"), object: nil)
+  }
+
+  private func createRoom(name: String) {
+    Task {
+      isLoading = true
+      do {
+        _ = try await Database.shared.createRoom(
+          name: name,
+          description: "A special memory from \(name)",
+          tags: ["celebration"],
+          isPrivate: false,
+          isTimeCapsule: false,
+          capsuleDurationDays: 0,
+          capsuleDurationHours: 0,
+          capsuleDurationMinutes: 0,
+          unlockDate: nil,
+          backgroundMusic: nil,
+          theme: "default",
+          expirationDate: nil,
+          rollingExpiryDays: 0,
+          collaborators: []
+        )
+
+        // Remove from pending list
+        await MainActor.run {
+          pendingCelebrations.removeAll { $0 == name }
+          isLoading = false
+        }
+
+        // Mark as seen so HallwayView also knows
+        let key = "seenCelebration_\(name.lowercased())"
+        UserDefaults.standard.set(true, forKey: key)
+
+        // Reload data to reflect the new room
+        loadUserData()
+      } catch {
+        await MainActor.run {
+          errorMessage = "Failed to create room: \(error.localizedDescription)"
+          isLoading = false
+        }
+      }
+    }
   }
 }
 

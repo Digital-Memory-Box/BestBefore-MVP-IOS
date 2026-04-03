@@ -6,7 +6,14 @@ struct CreateRoomFlowView: View {
 
   // Step 1 Data
   @State private var roomName = ""
+  @State private var descriptionText = ""
+  @State private var tags: [String] = []
+  @State private var currentTag = ""
   @State private var isPrivate = false
+
+  private let presetTags = [
+    "trip", "music", "science", "party", "family", "education", "art", "gaming", "fitness", "food",
+  ]
 
   // Step 2 Data
   @State private var timeCapsuleEnabled = false
@@ -29,6 +36,8 @@ struct CreateRoomFlowView: View {
   // Step 4 Data - Memory Dump Rules
   @State private var expirationDateEnabled = false
   @State private var expirationDate: Date = Date().addingTimeInterval(86400 * 30)  // Default 30 days
+  @State private var uploadStartDateEnabled = false
+  @State private var uploadStartDate: Date = Date()
   @State private var rollingExpiryDays: Int = 0  // 0 = Never
 
   // Step 5 Data - Collaborators
@@ -36,7 +45,10 @@ struct CreateRoomFlowView: View {
   @State private var newCollaboratorEmail: String = ""
 
   var onComplete:
-    (String, Bool, Bool, Int, Int, Int, Date?, String?, String, Date?, Int, [Collaborator]) -> Void
+    (
+      String, String, [String], Bool, Bool, Int, Int, Int, Date?, String?, String, Date?, Date?, Int,
+      [Collaborator]
+    ) -> Void
 
   var body: some View {
     ZStack {
@@ -138,10 +150,12 @@ struct CreateRoomFlowView: View {
             } else {
               let finalDate = (lockMode == .date) ? targetDate : nil
               let finalExpiration = expirationDateEnabled ? expirationDate : nil
+              let finalUploadStart = uploadStartDateEnabled ? uploadStartDate : nil
               onComplete(
-                roomName, isPrivate, timeCapsuleEnabled, capsuleDuration, capsuleHours,
+                roomName, descriptionText, tags, isPrivate, timeCapsuleEnabled, capsuleDuration,
+                capsuleHours,
                 capsuleMinutes, finalDate, selectedMusic, selectedTheme, finalExpiration,
-                rollingExpiryDays, collaborators)
+                finalUploadStart, rollingExpiryDays, collaborators)
               dismiss()
             }
           } label: {
@@ -178,6 +192,96 @@ struct CreateRoomFlowView: View {
         .cornerRadius(12)
         .foregroundColor(.white)
         .font(.system(size: 18, weight: .medium))
+
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Description (Optional)")
+          .font(.system(size: 16, weight: .bold))
+          .foregroundColor(.white)
+        TextField("Briefly describe this room...", text: $descriptionText)
+          .padding()
+          .background(Color.white.opacity(0.1))
+          .cornerRadius(12)
+          .foregroundColor(.white)
+      }
+
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Tags (e.g. trip, music)")
+          .font(.system(size: 16, weight: .bold))
+          .foregroundColor(.white)
+        HStack {
+          TextField("Add a tag...", text: $currentTag)
+            .padding()
+            .background(Color.white.opacity(0.1))
+            .cornerRadius(12)
+            .foregroundColor(.white)
+            .textInputAutocapitalization(.never)
+            .disableAutocorrection(true)
+            .onSubmit {
+              let tag = currentTag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+              if !tag.isEmpty && !tags.contains(tag) {
+                withAnimation { tags.append(tag) }
+              }
+              currentTag = ""
+            }
+          Button(action: {
+            let tag = currentTag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !tag.isEmpty && !tags.contains(tag) {
+              withAnimation { tags.append(tag) }
+            }
+            currentTag = ""
+          }) {
+            Image(systemName: "plus.circle.fill")
+              .font(.system(size: 28))
+              .foregroundColor(currentTag.isEmpty ? .gray : .blue)
+          }
+          .disabled(currentTag.isEmpty)
+        }
+        if !tags.isEmpty {
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack {
+              ForEach(tags, id: \.self) { tag in
+                HStack(spacing: 4) {
+                  Text("#\(tag)")
+                    .font(.system(size: 14))
+                  Button(action: {
+                    withAnimation { tags.removeAll(where: { $0 == tag }) }
+                  }) {
+                    Image(systemName: "xmark.circle.fill")
+                      .font(.system(size: 14))
+                  }
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(Color.blue.opacity(0.3))
+                .cornerRadius(16)
+                .foregroundColor(.white)
+              }
+            }
+          }
+        }
+
+        // Preset Tags
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack {
+            ForEach(presetTags, id: \.self) { tag in
+              Button(action: {
+                if !tags.contains(tag) {
+                  withAnimation { tags.append(tag) }
+                }
+              }) {
+                Text("#\(tag)")
+                  .font(.system(size: 14, weight: .medium))
+                  .padding(.horizontal, 12)
+                  .padding(.vertical, 6)
+                  .background(
+                    tags.contains(tag) ? Color.blue.opacity(0.8) : Color.white.opacity(0.1)
+                  )
+                  .foregroundColor(tags.contains(tag) ? .white : .gray)
+                  .cornerRadius(16)
+              }
+            }
+          }
+        }
+      }
 
       VStack(alignment: .leading, spacing: 16) {
         Text("Privacy Status")
@@ -385,12 +489,45 @@ struct CreateRoomFlowView: View {
               ) {
                 selectedMusic = "Vaporwave"
               }
+
+              Divider().background(Color.white.opacity(0.1))
+                .padding(.vertical, 8)
+
+              VStack(alignment: .leading, spacing: 8) {
+                Text("Custom SoundCloud Link")
+                  .font(.system(size: 14, weight: .bold))
+                  .foregroundColor(.white.opacity(0.8))
+
+                TextField(
+                  "Paste SoundCloud playlist or track URL",
+                  text: Binding(
+                    get: {
+                      if let music = selectedMusic, music.contains("soundcloud.com") {
+                        return music
+                      }
+                      return ""
+                    },
+                    set: { selectedMusic = $0.isEmpty ? nil : $0 }
+                  )
+                )
+                .padding()
+                .background(Color.white.opacity(0.05))
+                .cornerRadius(12)
+                .foregroundColor(.blue)
+                .font(.system(size: 14, design: .monospaced))
+                .autocapitalization(.none)
+                .disableAutocorrection(true)
+
+                Text("Use this to play your custom SoundCloud playlist in this room.")
+                  .font(.system(size: 10))
+                  .foregroundColor(.gray)
+              }
             }
           }
         }
+        .padding(.horizontal, 24)
       }
     }
-    .padding(.horizontal, 24)
   }
 
   // --- NEW STEP 4: Memory Dump Rules ---
@@ -426,6 +563,40 @@ struct CreateRoomFlowView: View {
             }
             .pickerStyle(SegmentedPickerStyle())
             .padding(.top, 8)
+          }
+          .padding()
+          .background(Color.white.opacity(0.05))
+          .cornerRadius(12)
+
+          // Option B: Upload Start Window
+          VStack(alignment: .leading, spacing: 12) {
+            Toggle(isOn: $uploadStartDateEnabled) {
+              VStack(alignment: .leading, spacing: 4) {
+                Text("Upload Start Date")
+                  .font(.system(size: 18, weight: .bold))
+                  .foregroundColor(.white)
+
+                Text("Block uploads until a specific date. Useful for future events.")
+                  .font(.system(size: 14))
+                  .foregroundColor(.gray)
+              }
+            }
+            .tint(.blue)
+
+            if uploadStartDateEnabled {
+              DatePicker(
+                "Start Date",
+                selection: $uploadStartDate,
+                in: Date()...,
+                displayedComponents: [.date]
+              )
+              .datePickerStyle(GraphicalDatePickerStyle())
+              .colorScheme(.dark)
+              .padding()
+              .background(Color.white.opacity(0.1))
+              .cornerRadius(12)
+              .transition(.opacity.combined(with: .move(edge: .top)))
+            }
           }
           .padding()
           .background(Color.white.opacity(0.05))
@@ -583,6 +754,5 @@ struct CreateRoomFlowView: View {
 }
 
 #Preview {
-
-  CreateRoomFlowView { _, _, _, _, _, _, _, _, _, _, _, _ in }
+  CreateRoomFlowView { _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ in }
 }

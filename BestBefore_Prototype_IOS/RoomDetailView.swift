@@ -1,5 +1,6 @@
 import Combine
 import PhotosUI
+import Combine
 import SwiftUI
 
 struct RoomDetailView: View {
@@ -27,9 +28,12 @@ struct RoomDetailView: View {
   @State private var showAudioRecorder = false
   @State private var showEditRoom = false
   @State private var showShowroom = false  // Toggle showroom gallery
+  @State private var showShareSheet = false // NEW
   @State private var showRoomInfo = false
   @State private var showVault = false
   @State private var showUnlockToast = false
+  @State private var showLinkRoomSheet = false  // NEW
+  @State private var connectedRooms: [RoomObject] = []  // NEW
 
   // Real Data State (Synced with Backend)
   @State private var memories: [MemoryItem] = []
@@ -40,14 +44,24 @@ struct RoomDetailView: View {
   @State private var alertMessage = ""
   @State private var isLockedState: Bool = false
 
+  // Upload State
+  @State private var isUploading = false
+  @State private var uploadingLabel = ""
+
   // Audio Simulation State
   @State private var isRecording = false
   @State private var recordingTime = 0.0
   @State private var audioTimer: Timer?
+  @StateObject private var scController = SoundCloudController()
 
   private var isExpired: Bool {
     guard let expDate = currentRoom.expirationDate else { return false }
     return Date() > expDate
+  }
+
+  private var isBeforeUploadWindow: Bool {
+    guard let startDate = currentRoom.uploadStartDate else { return false }
+    return Date() < startDate
   }
 
   private var isOwner: Bool {
@@ -112,19 +126,6 @@ struct RoomDetailView: View {
           Spacer()
 
           HStack(spacing: 20) {
-            // Archive Vault Button
-            Button(action: {
-              if currentRoom.isLocked {
-                alertMessage = "Vault is locked until the time capsule opens."
-                showAlert = true
-              } else {
-                showVault = true
-              }
-            }) {
-              Image(systemName: "archivebox.fill")
-                .foregroundColor(accentColor)
-            }
-
             // Showroom Button
             Button(action: {
               if currentRoom.isLocked {
@@ -138,23 +139,36 @@ struct RoomDetailView: View {
                 .foregroundColor(accentColor)
             }
 
-            if isOwner {
-              Menu {
+            if currentRoom.isPrivate && isOwner {
+              Button(action: {
+                showShareSheet = true
+              }) {
+                Image(systemName: "qrcode.viewfinder")
+                  .foregroundColor(accentColor)
+              }
+            }
+
+            Menu {
+              Button("Archive Vault", systemImage: "archivebox.fill") {
+                if currentRoom.isLocked {
+                  alertMessage = "Vault is locked until the time capsule opens."
+                  showAlert = true
+                } else {
+                  showVault = true
+                }
+              }
+
+              Button("Room Details", systemImage: "info.circle") { showRoomInfo = true }
+
+              if isOwner {
                 Button("Dump Active Memories", systemImage: "archivebox") { dumpMemories() }
-                Button("Room Details", systemImage: "info.circle") { showRoomInfo = true }
                 Button("Edit Room", systemImage: "pencil") { showEditRoom = true }
                 Button("Delete Room", systemImage: "trash", role: .destructive) { deleteRoom() }
-              } label: {
-                Image(systemName: "ellipsis.circle")
-                  .font(.system(size: 24))
-                  .foregroundColor(.white)
               }
-            } else {
-              Button(action: { showRoomInfo = true }) {
-                Image(systemName: "info.circle")
-                  .font(.system(size: 24))
-                  .foregroundColor(.white)
-              }
+            } label: {
+              Image(systemName: "ellipsis.circle")
+                .font(.system(size: 24))
+                .foregroundColor(.white)
             }
           }
         }
@@ -218,17 +232,29 @@ struct RoomDetailView: View {
                 }
 
                 if let music = currentRoom.backgroundMusic, music != "None" {
-                  HStack(spacing: 8) {
-                    LivePulseIndicator(color: accentColor)
+                  if music.lowercased().contains("soundcloud.com") {
+                    ZStack {
+                      SoundCloudPlayerView(soundCloudUrl: music, isController: true, controller: scController)
+                        .frame(width: 1, height: 1)
+                        .opacity(0.01)
+                      
+                      CustomMusicPlayerView(controller: scController)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 10)
+                    }
+                  } else {
+                    HStack(spacing: 8) {
+                      LivePulseIndicator(color: accentColor)
 
-                    Text(music)
-                      .font(.system(size: 12, weight: .bold))
-                      .foregroundColor(accentColor.opacity(0.8))
+                      Text(music)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(accentColor.opacity(0.8))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(accentColor.opacity(0.1))
+                    .clipShape(Capsule())
                   }
-                  .padding(.horizontal, 12)
-                  .padding(.vertical, 6)
-                  .background(accentColor.opacity(0.1))
-                  .clipShape(Capsule())
                 }
 
                 // Collaborator Summary Row
@@ -261,7 +287,19 @@ struct RoomDetailView: View {
 
               // Memory Grid (Owner or Collaborator)
               if canContribute {
-                if isExpired {
+                if isBeforeUploadWindow {
+                  VStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "calendar.badge.clock")
+                      .font(.system(size: 32))
+                      .foregroundColor(.white.opacity(0.6))
+                    Text("Uploads open on \(currentRoom.uploadStartDate.map { $0.formatted(date: .abbreviated, time: .omitted) } ?? "")")
+                      .font(.system(size: 16))
+                      .foregroundColor(.white.opacity(0.6))
+                      .multilineTextAlignment(.center)
+                  }
+                  .frame(maxWidth: .infinity)
+                  .padding()
+                } else if isExpired {
                   VStack(alignment: .center, spacing: 12) {
                     Image(systemName: "lock.fill")
                       .font(.system(size: 32))
@@ -293,6 +331,7 @@ struct RoomDetailView: View {
                         Task {
                           print("[DEBUG] Picker: Item selected")
                           if let newItem = newItem {
+                            await MainActor.run { isUploading = true; uploadingLabel = "Uploading photo..." }
                             do {
                               var finalImage: UIImage?
 
@@ -322,7 +361,7 @@ struct RoomDetailView: View {
                               print("[DEBUG] Picker: ERROR during load: \(error)")
                             }
                           }
-                          await MainActor.run { selectedPhotoItem = nil }
+                          await MainActor.run { isUploading = false; selectedPhotoItem = nil }
                         }
                       }
 
@@ -344,6 +383,7 @@ struct RoomDetailView: View {
                         Task {
                           if let newItem = newItem {
                             print("[DEBUG] Video Picker: Item selected")
+                            await MainActor.run { isUploading = true; uploadingLabel = "Uploading video..." }
                             do {
                               if let data = try await newItem.loadTransferable(type: Data.self) {
                                 print(
@@ -363,7 +403,7 @@ struct RoomDetailView: View {
                               print("[DEBUG] Video Picker Error: \(error)")
                             }
                           }
-                          await MainActor.run { selectedVideoItem = nil }
+                          await MainActor.run { isUploading = false; selectedVideoItem = nil }
                         }
                       }
 
@@ -493,6 +533,60 @@ struct RoomDetailView: View {
                 }
               }
 
+              // --- Connected Rooms (Shortcuts) Section ---
+              VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                  Text("Connected Rooms")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.leading, 4)
+                  Spacer()
+                  if canContribute {
+                    Button(action: { showLinkRoomSheet = true }) {
+                      Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(accentColor)
+                    }
+                  }
+                }
+
+                if connectedRooms.isEmpty {
+                  Text("No connections yet.")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.4))
+                    .padding(.leading, 4)
+                } else {
+                  ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                      ForEach(connectedRooms) { linkedRoom in
+                        NavigationLink(
+                          destination: RoomDetailView(room: linkedRoom, context: .roaming)
+                        ) {
+                          VStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 12)
+                              .fill(Color(hex: linkedRoom.theme) ?? .blue)
+                              .frame(width: 120, height: 80)
+                              .overlay(
+                                VStack {
+                                  Spacer()
+                                  Text(linkedRoom.name)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(8)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(Color.black.opacity(0.4))
+                                }
+                              )
+                              .clipShape(RoundedRectangle(cornerRadius: 12))
+                          }
+                        }
+                      }
+                    }
+                    .padding(.horizontal, 4)
+                  }
+                }
+              }
+
             }
             .padding(24)
             .padding(.bottom, 100)
@@ -503,11 +597,27 @@ struct RoomDetailView: View {
       HStack {
         Spacer()
       }
+
+      if isUploading {
+        Color.black.opacity(0.6).ignoresSafeArea()
+        VStack(spacing: 16) {
+          ProgressView()
+            .tint(.white)
+            .scaleEffect(1.5)
+          Text(uploadingLabel)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundColor(.white)
+        }
+        .padding(32)
+        .background(.ultraThinMaterial)
+        .cornerRadius(20)
+      }
     }
     .navigationBarHidden(true)
     .task {
       self.isLockedState = currentRoom.isLocked
       await fetchMemories()
+      await fetchConnectedRooms()
       AudioManager.shared.playBackgroundMusic(for: currentRoom.backgroundMusic)
 
       // Initial check for unlock toast
@@ -567,10 +677,12 @@ struct RoomDetailView: View {
 
     .sheet(isPresented: $showEditRoom) {
       EditRoomView(room: currentRoom) {
-        name, isPrivate, isTimeCapsule, days, hours, mins, date, music, theme, expirationDate,
+        name, descriptionText, tags, isPrivate, isTimeCapsule, days, hours, mins, date, music,
+        theme, expirationDate,
         rollingExpiryDays, collaborators in
         updateRoom(
-          name: name, isPrivate: isPrivate, isTimeCapsule: isTimeCapsule,
+          name: name, description: descriptionText, tags: tags, isPrivate: isPrivate,
+          isTimeCapsule: isTimeCapsule,
           days: days, hours: hours, mins: mins,
           unlockDate: date,
           backgroundMusic: music,
@@ -578,6 +690,17 @@ struct RoomDetailView: View {
           expirationDate: expirationDate,
           rollingExpiryDays: rollingExpiryDays,
           collaborators: collaborators)
+      }
+    }
+
+    .sheet(isPresented: $showShareSheet) {
+      ShareRoomSheet(room: currentRoom)
+    }
+
+    .sheet(isPresented: $showLinkRoomSheet) {
+      LinkRoomSheet(currentRoom: $currentRoom) { updatedRoom in
+        self.currentRoom = updatedRoom
+        Task { await fetchConnectedRooms() }
       }
     }
 
@@ -604,11 +727,12 @@ struct RoomDetailView: View {
           Spacer()
           Button("Save") {
             Task {
+              await MainActor.run { isUploading = true; uploadingLabel = "Saving note..." }
               await saveMemory(
                 type: .note,
                 title: noteText.count > 20 ? String(noteText.prefix(20)) + "..." : noteText,
                 content: noteText)
-              await MainActor.run { showNoteEditor = false }
+              await MainActor.run { isUploading = false; showNoteEditor = false }
             }
           }
           .font(.headline)
@@ -677,8 +801,10 @@ struct RoomDetailView: View {
             let data = try Data(contentsOf: selectedFile)
             print("[DEBUG] Music Import: Loaded \(data.count) bytes")
             if data.count < 15 * 1024 * 1024 {
+              await MainActor.run { isUploading = true; uploadingLabel = "Uploading music..." }
               let base64 = data.base64EncodedString()
               await saveMemory(type: .music, title: selectedFile.lastPathComponent, content: base64)
+              await MainActor.run { isUploading = false }
             } else {
               await MainActor.run {
                 alertMessage = "Audio file too large (Max 15MB)"
@@ -710,6 +836,34 @@ struct RoomDetailView: View {
         self.errorMessage = error.localizedDescription
         self.isLoading = false
       }
+    }
+  }
+
+  private func fetchConnectedRooms() async {
+    let linkedIds = currentRoom.linkedRooms.map { $0.roomId }
+    guard !linkedIds.isEmpty else { return }
+
+    do {
+      let allUserRooms = try await Database.shared.getAllRooms()
+      let publicRooms = try await Database.shared.getDiscoverableRooms()
+      let totalRooms = allUserRooms + publicRooms
+
+      let resolved = totalRooms.filter { linkedIds.contains($0.id) }
+      // Remove duplicates by ID natively
+      var unique = [RoomObject]()
+      var seen = Set<String>()
+      for r in resolved {
+        if !seen.contains(r.id) {
+          seen.insert(r.id)
+          unique.append(r)
+        }
+      }
+
+      await MainActor.run {
+        self.connectedRooms = unique
+      }
+    } catch {
+      print("[DEBUG] fetchConnectedRooms: Failed to load linked rooms - \(error)")
     }
   }
 
@@ -771,9 +925,10 @@ struct RoomDetailView: View {
       }
     } else {
       Task {
+        await MainActor.run { isUploading = true; uploadingLabel = "Saving audio..." }
         await saveMemory(
           type: .audio, title: "Voice Memo (\(timeString(from: recordingTime, short: true)))")
-        await MainActor.run { stopRecording() }
+        await MainActor.run { isUploading = false; stopRecording() }
       }
     }
   }
@@ -797,7 +952,8 @@ struct RoomDetailView: View {
   }
 
   private func updateRoom(
-    name: String, isPrivate: Bool, isTimeCapsule: Bool, days: Int, hours: Int, mins: Int,
+    name: String, description: String, tags: [String], isPrivate: Bool, isTimeCapsule: Bool,
+    days: Int, hours: Int, mins: Int,
     unlockDate: Date?,  // NEW
     backgroundMusic: String?,
     theme: String,
@@ -808,7 +964,8 @@ struct RoomDetailView: View {
     Task {
       do {
         try await Database.shared.updateRoom(
-          id: currentRoom.id, name: name, isPrivate: isPrivate, isTimeCapsule: isTimeCapsule,
+          id: currentRoom.id, name: name, description: description, tags: tags,
+          isPrivate: isPrivate, isTimeCapsule: isTimeCapsule,
           capsuleDurationDays: days,
           capsuleDurationHours: hours,
           capsuleDurationMinutes: mins,
@@ -821,6 +978,8 @@ struct RoomDetailView: View {
         // Update local state
         await MainActor.run {
           currentRoom.name = name
+          currentRoom.description = description
+          currentRoom.tags = tags
           currentRoom.isPrivate = isPrivate
           currentRoom.isTimeCapsule = isTimeCapsule
           currentRoom.capsuleDurationDays = days
