@@ -5,6 +5,7 @@ struct MusicPresetOption: View {
   let title: String
   let icon: String
   let isSelected: Bool
+  let tintColor: Color  // Dynamic tint
   let action: () -> Void
 
   var body: some View {
@@ -23,15 +24,15 @@ struct MusicPresetOption: View {
 
         if isSelected {
           Image(systemName: "checkmark.circle.fill")
-            .foregroundColor(.blue)
+            .foregroundColor(tintColor)
         }
       }
       .padding()
-      .background(isSelected ? Color.blue.opacity(0.2) : Color.white.opacity(0.05))
+      .background(isSelected ? tintColor.opacity(0.2) : Color.white.opacity(0.05))
       .cornerRadius(12)
       .overlay(
         RoundedRectangle(cornerRadius: 12)
-          .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
+          .stroke(isSelected ? tintColor : Color.clear, lineWidth: 2)
       )
     }
   }
@@ -42,6 +43,7 @@ struct PrivacyOption: View {
   let subtitle: String
   let icon: String
   let isSelected: Bool
+  let tintColor: Color  // Dynamic tint
   let action: () -> Void
 
   var body: some View {
@@ -58,11 +60,11 @@ struct PrivacyOption: View {
       .foregroundColor(isSelected ? .white : .gray)
       .padding()
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(isSelected ? Color.blue.opacity(0.2) : Color.white.opacity(0.05))
+      .background(isSelected ? tintColor.opacity(0.2) : Color.white.opacity(0.05))
       .cornerRadius(12)
       .overlay(
         RoundedRectangle(cornerRadius: 12)
-          .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
+          .stroke(isSelected ? tintColor : Color.clear, lineWidth: 2)
       )
     }
   }
@@ -72,6 +74,7 @@ struct DurationButton: View {
   let label: String
   let days: Int
   @Binding var current: Int
+  let tintColor: Color  // Dynamic tint
 
   var body: some View {
     Button {
@@ -82,7 +85,7 @@ struct DurationButton: View {
         .foregroundColor(current == days ? .white : .gray)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
-        .background(current == days ? Color.blue : Color.white.opacity(0.1))
+        .background(current == days ? tintColor : Color.white.opacity(0.1))
         .cornerRadius(8)
     }
   }

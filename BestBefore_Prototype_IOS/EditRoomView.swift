@@ -222,6 +222,7 @@ struct EditRoomView: View {
                   subtitle: "Anyone can see.",
                   icon: "globe",
                   isSelected: !isPrivate,
+                  tintColor: .blue,
                   action: { isPrivate = false }
                 )
                 PrivacyOption(
@@ -229,6 +230,7 @@ struct EditRoomView: View {
                   subtitle: "Only invited.",
                   icon: "lock.fill",
                   isSelected: isPrivate,
+                  tintColor: .blue,
                   action: { isPrivate = true }
                 )
               }
@@ -302,9 +304,9 @@ struct EditRoomView: View {
 
                       // Presets
                       HStack(spacing: 8) {
-                        DurationButton(label: "1 Week", days: 7, current: $capsuleDuration)
-                        DurationButton(label: "21 Days", days: 21, current: $capsuleDuration)
-                        DurationButton(label: "1 Month", days: 30, current: $capsuleDuration)
+                        DurationButton(label: "1 Week", days: 7, current: $capsuleDuration, tintColor: .blue)
+                        DurationButton(label: "21 Days", days: 21, current: $capsuleDuration, tintColor: .blue)
+                        DurationButton(label: "1 Month", days: 30, current: $capsuleDuration, tintColor: .blue)
                       }
                     }
                   } else {
@@ -517,30 +519,35 @@ struct EditRoomView: View {
 
               VStack(spacing: 12) {
                 MusicPresetOption(
-                  title: "None", icon: "speaker.slash.fill", isSelected: backgroundMusic == nil
+                  title: "None", icon: "speaker.slash.fill", isSelected: backgroundMusic == nil,
+                  tintColor: .blue
                 ) {
                   backgroundMusic = nil
                 }
                 MusicPresetOption(
                   title: "Lofi Beats", icon: "music.note",
-                  isSelected: backgroundMusic == "Lofi Beats"
+                  isSelected: backgroundMusic == "Lofi Beats",
+                  tintColor: .blue
                 ) {
                   backgroundMusic = "Lofi Beats"
                 }
                 MusicPresetOption(
                   title: "Nature Ambience", icon: "leaf.fill",
-                  isSelected: backgroundMusic == "Nature Ambience"
+                  isSelected: backgroundMusic == "Nature Ambience",
+                  tintColor: .blue
                 ) {
                   backgroundMusic = "Nature Ambience"
                 }
                 MusicPresetOption(
                   title: "Minimal Piano", icon: "pianokeys",
-                  isSelected: backgroundMusic == "Minimal Piano"
+                  isSelected: backgroundMusic == "Minimal Piano",
+                  tintColor: .blue
                 ) {
                   backgroundMusic = "Minimal Piano"
                 }
                 MusicPresetOption(
-                  title: "Vaporwave", icon: "sparkles", isSelected: backgroundMusic == "Vaporwave"
+                  title: "Vaporwave", icon: "sparkles", isSelected: backgroundMusic == "Vaporwave",
+                  tintColor: .blue
                 ) {
                   backgroundMusic = "Vaporwave"
                 }

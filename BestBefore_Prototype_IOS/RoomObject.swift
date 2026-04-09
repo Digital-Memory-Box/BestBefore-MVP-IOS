@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 enum CollaboratorRole: String, Codable {
   case viewer
@@ -150,5 +151,19 @@ struct MemoryItem: Identifiable, Codable {
     self.date = date
     self.content = content
     self.isArchived = isArchived
+  }
+}
+extension RoomObject {
+  var themeColor: Color {
+    switch theme.lowercased() {
+    case "ocean": return .teal
+    case "sunset": return .orange
+    case "forest": return .green
+    case "cyberpunk": return .purple
+    case "default": return .blue
+    default:
+      // Try parsing as hex string, fallback to blue
+      return Color(hex: theme)
+    }
   }
 }

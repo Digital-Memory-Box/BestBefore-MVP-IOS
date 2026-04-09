@@ -1,5 +1,6 @@
 import EventKit
 import SwiftUI
+import PhotosUI
 
 struct ProfileView: View {
   @Environment(\.dismiss) var dismiss
@@ -9,7 +10,9 @@ struct ProfileView: View {
   @State private var selectedMusic: String? = nil
   @State private var isLoading = false
   @State private var errorMessage: String?
-  @State private var selectedTab = 0  // 0: Dashboard, 1: Customization, 2: Settings
+  @State private var selectedTab = 1  // Default to Customization if needed
+  @State private var applyAccentToAll = false
+  @State private var syncAccentWithRoom = false
   @State private var newEmail: String = ""
   @State private var newPassword: String = ""
   @State private var myRooms: [RoomObject] = []
@@ -19,6 +22,13 @@ struct ProfileView: View {
     ActivityItem(title: "Created first room", date: Date().addingTimeInterval(-86400 * 4)),
   ]
   @State private var pendingCelebrations: [String] = []
+
+  // --- Dynamic Dashboard Data ---
+  @State private var biography: String = ""
+  @State private var roomingCount: String = "0"
+  @State private var roomersCount: String = "0"
+  @State private var selectedItems: [PhotosPickerItem] = []
+  @State private var profileImageData: Data? = nil
 
   let themes = ["Default", "Glass", "Midnight", "Vibrant"]
   let colors: [Color] = [.blue, .purple, .pink, .orange, .green, .red]
@@ -41,16 +51,16 @@ struct ProfileView: View {
             saveProfile()
           }
           .font(.headline)
-          .foregroundColor(.blue)
+          .foregroundColor(selectedColor)
           .disabled(isLoading)
         }
         .padding()
 
         // Tab Picker
         HStack(spacing: 0) {
-          TabButton(title: "Dashboard", isSelected: selectedTab == 0) { selectedTab = 0 }
-          TabButton(title: "Customization", isSelected: selectedTab == 1) { selectedTab = 1 }
-          TabButton(title: "Settings", isSelected: selectedTab == 2) { selectedTab = 2 }
+          TabButton(title: "Dashboard", isSelected: selectedTab == 0, color: selectedColor) { selectedTab = 0 }
+          TabButton(title: "Customization", isSelected: selectedTab == 1, color: selectedColor) { selectedTab = 1 }
+          TabButton(title: "Settings", isSelected: selectedTab == 2, color: selectedColor) { selectedTab = 2 }
         }
         .padding(.horizontal)
         .padding(.bottom, 8)
@@ -89,6 +99,17 @@ struct ProfileView: View {
 
   private var dashboardSection: some View {
     VStack(alignment: .leading, spacing: 32) {
+      // User Card (NEW)
+      UserCard(
+        name: name,
+        biography: biography,
+        roomingCount: roomingCount,
+        roomersCount: roomersCount,
+        profileImageData: profileImageData,
+        accentColor: selectedColor
+      )
+      .padding(.horizontal, -24) // Compensation for parent padding
+
       // Stats/Overview
       HStack(spacing: 20) {
         StatCard(
@@ -167,6 +188,92 @@ struct ProfileView: View {
           .foregroundColor(.white)
       }
 
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Biography")
+          .font(.system(size: 14, weight: .bold))
+          .foregroundColor(.gray)
+        TextEditor(text: $biography)
+          .frame(height: 80)
+          .padding(8)
+          .scrollContentBackground(.hidden)
+          .background(Color.white.opacity(0.05))
+          .cornerRadius(12)
+          .foregroundColor(.white)
+          .font(.system(size: 14))
+      }
+
+      // Profile Photo Picker
+      VStack(alignment: .leading, spacing: 16) {
+        Text("Profile Photo")
+          .font(.system(size: 14, weight: .bold))
+          .foregroundColor(.gray)
+
+        HStack {
+            if let data = profileImageData, let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 80, height: 80)
+                    .clipShape(Circle())
+            } else {
+                Circle()
+                    .fill(selectedColor.opacity(0.2))
+                    .frame(width: 80, height: 80)
+                    .overlay(Image(systemName: "person.fill").foregroundColor(selectedColor))
+            }
+            
+            PhotosPicker(
+                selection: $selectedItems,
+                maxSelectionCount: 1,
+                matching: .images
+            ) {
+                Text("Update Photo")
+                    .font(.system(size: 14, weight: .bold))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(selectedColor)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+            }
+            .onChange(of: selectedItems) { newItems in
+                guard let item = newItems.first else { return }
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self) {
+                        await MainActor.run {
+                            self.profileImageData = data
+                        }
+                    }
+                }
+            }
+        }
+      }
+
+      // Manual Stats counts
+      HStack(spacing: 20) {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Rooming Count")
+            .font(.system(size: 12, weight: .bold))
+            .foregroundColor(.gray)
+          TextField("0", text: $roomingCount)
+            .keyboardType(.numberPad)
+            .padding()
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(12)
+            .foregroundColor(.white)
+        }
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Roomers Count")
+            .font(.system(size: 12, weight: .bold))
+            .foregroundColor(.gray)
+          TextField("0", text: $roomersCount)
+            .keyboardType(.numberPad)
+            .padding()
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(12)
+            .foregroundColor(.white)
+        }
+      }
+
       // Theme Selection
       VStack(alignment: .leading, spacing: 16) {
         Text("Interface Theme")
@@ -210,6 +317,43 @@ struct ProfileView: View {
         }
       }
 
+      // Advanced Customization
+      VStack(alignment: .leading, spacing: 20) {
+        Text("Advanced Customization")
+          .font(.system(size: 14, weight: .bold))
+          .foregroundColor(.gray)
+
+        VStack(spacing: 24) {
+          VStack(alignment: .leading, spacing: 4) {
+            Toggle(isOn: $applyAccentToAll) {
+              Text("Apply Accent to all UI elements")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.white)
+            }
+            .tint(selectedColor)
+            
+            Text("Converts all icons and text to the accent color, except for white exceptions in the Default theme.")
+              .font(.system(size: 12))
+              .foregroundColor(.gray)
+              .padding(.trailing, 20)
+          }
+
+          VStack(alignment: .leading, spacing: 4) {
+            Toggle(isOn: $syncAccentWithRoom) {
+              Text("Sync accent with room themes")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.white)
+            }
+            .tint(selectedColor)
+            
+            Text("Automatically updates the global accent color based on the current room's theme color while swiping.")
+              .font(.system(size: 12))
+              .foregroundColor(.gray)
+              .padding(.trailing, 20)
+          }
+        }
+      }
+
       // Profile Music
       VStack(alignment: .leading, spacing: 16) {
         Text("Profile Music")
@@ -218,21 +362,21 @@ struct ProfileView: View {
 
         VStack(spacing: 12) {
           MusicPresetOption(
-            title: "None", icon: "speaker.slash.fill", isSelected: selectedMusic == nil
+            title: "None", icon: "speaker.slash.fill", isSelected: selectedMusic == nil, tintColor: selectedColor
           ) {
             selectedMusic = nil
             AudioManager.shared.stopMusic()
           }
           MusicPresetOption(
             title: "Dreamy Synth", icon: "sparkles",
-            isSelected: selectedMusic == "Dreamy Synth"
+            isSelected: selectedMusic == "Dreamy Synth", tintColor: selectedColor
           ) {
             selectedMusic = "Dreamy Synth"
             AudioManager.shared.playBackgroundMusic(for: "Dreamy Synth")
           }
           MusicPresetOption(
             title: "Chill Cafe", icon: "cup.and.saucer.fill",
-            isSelected: selectedMusic == "Chill Cafe"
+            isSelected: selectedMusic == "Chill Cafe", tintColor: selectedColor
           ) {
             selectedMusic = "Chill Cafe"
             AudioManager.shared.playBackgroundMusic(for: "Chill Cafe")
@@ -354,11 +498,22 @@ struct ProfileView: View {
   private func loadUserData() {
     guard let user = AuthService.shared.currentUser else { return }
     name = user.name ?? ""
-    selectedTheme = user.theme ?? "Default"
-    if let hex = user.accentColor {
+    selectedTheme = UserDefaults.standard.string(forKey: "selectedTheme") ?? user.theme ?? "Default"
+    // UserDefaults'tan önce oku (lokal kayıt öncelikli)
+    if let localHex = UserDefaults.standard.string(forKey: "accentColor") {
+      selectedColor = Color(hex: localHex)
+    } else if let hex = user.accentColor {
       selectedColor = Color(hex: hex)
     }
     selectedMusic = user.profileMusic
+    applyAccentToAll = UserDefaults.standard.bool(forKey: "applyAccentToAll")
+    syncAccentWithRoom = UserDefaults.standard.bool(forKey: "syncAccentWithRoom")
+
+    // Customization fields
+    biography = UserDefaults.standard.string(forKey: "profileBio") ?? ""
+    roomingCount = UserDefaults.standard.string(forKey: "roomingCount") ?? "0"
+    roomersCount = UserDefaults.standard.string(forKey: "roomersCount") ?? "0"
+    profileImageData = UserDefaults.standard.data(forKey: "profileImageData")
 
     // Load History & Stats
     Task {
@@ -389,6 +544,19 @@ struct ProfileView: View {
   }
 
   private func saveProfile() {
+    // --- Lokale hemen kaydet (sunucu bağımsız anlık etki) ---
+    let hexColor = selectedColor.toHex() ?? "#007AFF"
+    UserDefaults.standard.set(hexColor, forKey: "accentColor")
+    UserDefaults.standard.set(selectedTheme, forKey: "selectedTheme")
+    UserDefaults.standard.set(applyAccentToAll, forKey: "applyAccentToAll")
+    UserDefaults.standard.set(syncAccentWithRoom, forKey: "syncAccentWithRoom")
+    UserDefaults.standard.set(biography, forKey: "profileBio")
+    UserDefaults.standard.set(roomingCount, forKey: "roomingCount")
+    UserDefaults.standard.set(roomersCount, forKey: "roomersCount")
+    UserDefaults.standard.set(profileImageData, forKey: "profileImageData")
+    // HallwayView'ı bilgilendir
+    NotificationCenter.default.post(name: NSNotification.Name("AccentColorChanged"), object: nil)
+
     Task {
       isLoading = true
       errorMessage = nil
@@ -396,7 +564,7 @@ struct ProfileView: View {
         _ = try await AuthService.shared.updateProfile(
           name: name,
           theme: selectedTheme,
-          accentColor: selectedColor.toHex() ?? "#007AFF",
+          accentColor: hexColor,
           profileMusic: selectedMusic
         )
         await MainActor.run {
@@ -405,8 +573,9 @@ struct ProfileView: View {
         }
       } catch {
         await MainActor.run {
-          errorMessage = error.localizedDescription
+          // Sunucu hatası olsa bile lokal kayıt başarılı, sadece dismiss et
           isLoading = false
+          dismiss()
         }
       }
     }
@@ -506,6 +675,7 @@ struct ActivityItem: Identifiable {
 struct TabButton: View {
   let title: String
   let isSelected: Bool
+  let color: Color  // Dynamic color
   let action: () -> Void
 
   var body: some View {
@@ -516,7 +686,7 @@ struct TabButton: View {
           .foregroundColor(isSelected ? .white : .gray)
 
         Rectangle()
-          .fill(isSelected ? Color.blue : Color.clear)
+          .fill(isSelected ? color : Color.clear)
           .frame(height: 2)
       }
     }
@@ -549,6 +719,74 @@ struct StatCard: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(Color.white.opacity(0.05))
     .cornerRadius(16)
+  }
+}
+
+struct UserCard: View {
+  let name: String
+  let biography: String
+  let roomingCount: String
+  let roomersCount: String
+  let profileImageData: Data?
+  let accentColor: Color
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: 8) {
+          Text(name.isEmpty ? "Username" : name)
+            .font(.system(size: 28, weight: .bold))
+            .foregroundColor(.white)
+          
+          HStack(spacing: 24) {
+             VStack(alignment: .leading) {
+               Text("Rooming")
+                 .font(.system(size: 12))
+                 .foregroundColor(.gray)
+               Text(roomingCount)
+                 .font(.system(size: 18, weight: .bold))
+                 .foregroundColor(.white)
+             }
+             VStack(alignment: .leading) {
+               Text("Roomers")
+                 .font(.system(size: 12))
+                 .foregroundColor(.gray)
+               Text(roomersCount)
+                 .font(.system(size: 18, weight: .bold))
+                 .foregroundColor(.white)
+             }
+          }
+        }
+        
+        Spacer()
+        
+        if let data = profileImageData, let uiImage = UIImage(data: data) {
+          Image(uiImage: uiImage)
+            .resizable()
+            .scaledToFill()
+            .frame(width: 80, height: 80)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
+        } else {
+          Circle()
+            .fill(accentColor.opacity(0.2))
+            .frame(width: 80, height: 80)
+            .overlay(Image(systemName: "person.fill").foregroundColor(accentColor))
+        }
+      }
+      
+      if !biography.isEmpty {
+        Text(biography)
+          .font(.system(size: 14))
+          .foregroundColor(.white.opacity(0.8))
+          .lineLimit(3)
+      }
+    }
+    .padding(24)
+    .background(
+      RoundedRectangle(cornerRadius: 24)
+        .fill(Color.white.opacity(0.05))
+    )
   }
 }
 

@@ -294,13 +294,15 @@ struct CreateRoomFlowView: View {
             subtitle: "Anyone can see and join.",
             icon: "globe",
             isSelected: !isPrivate,
+            tintColor: .blue,
             action: { isPrivate = false }
           )
           PrivacyOption(
             title: "Private",
-            subtitle: "Only visible to invited.",
+            subtitle: "Invite only.",
             icon: "lock.fill",
             isSelected: isPrivate,
+            tintColor: .blue,
             action: { isPrivate = true }
           )
         }
@@ -385,10 +387,10 @@ struct CreateRoomFlowView: View {
                 .padding(.leading, 8)
 
               // Presets
-              HStack(spacing: 8) {
-                DurationButton(label: "1 Week", days: 7, current: $capsuleDuration)
-                DurationButton(label: "21 Days", days: 21, current: $capsuleDuration)
-                DurationButton(label: "1 Month", days: 30, current: $capsuleDuration)
+              HStack(spacing: 12) {
+                DurationButton(label: "7 Days", days: 7, current: $capsuleDuration, tintColor: .blue)
+                DurationButton(label: "21 Days", days: 21, current: $capsuleDuration, tintColor: .blue)
+                DurationButton(label: "60 Days", days: 60, current: $capsuleDuration, tintColor: .blue)
               }
             } else {
               DatePicker(
@@ -459,33 +461,37 @@ struct CreateRoomFlowView: View {
 
             VStack(spacing: 12) {
               MusicPresetOption(
-                title: "None", icon: "speaker.slash.fill", isSelected: selectedMusic == nil
+                title: "None", icon: "speaker.slash.fill", isSelected: selectedMusic == nil,
+                tintColor: .blue
               ) {
                 selectedMusic = nil
               }
-
               MusicPresetOption(
-                title: "Lofi Beats", icon: "music.note", isSelected: selectedMusic == "Lofi Beats"
+                title: "Dreamy Synth", icon: "sparkles",
+                isSelected: selectedMusic == "Dreamy Synth",
+                tintColor: .blue
               ) {
-                selectedMusic = "Lofi Beats"
+                selectedMusic = "Dreamy Synth"
               }
-
               MusicPresetOption(
-                title: "Nature Ambience", icon: "leaf.fill",
-                isSelected: selectedMusic == "Nature Ambience"
+                title: "Chill Cafe", icon: "cup.and.saucer.fill",
+                isSelected: selectedMusic == "Chill Cafe",
+                tintColor: .blue
               ) {
-                selectedMusic = "Nature Ambience"
+                selectedMusic = "Chill Cafe"
               }
 
               MusicPresetOption(
                 title: "Minimal Piano", icon: "pianokeys",
-                isSelected: selectedMusic == "Minimal Piano"
+                isSelected: selectedMusic == "Minimal Piano",
+                tintColor: .blue
               ) {
                 selectedMusic = "Minimal Piano"
               }
 
               MusicPresetOption(
-                title: "Vaporwave", icon: "sparkles", isSelected: selectedMusic == "Vaporwave"
+                title: "Vaporwave", icon: "sparkles", isSelected: selectedMusic == "Vaporwave",
+                tintColor: .blue
               ) {
                 selectedMusic = "Vaporwave"
               }

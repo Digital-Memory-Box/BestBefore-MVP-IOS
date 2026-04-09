@@ -107,3 +107,8 @@ node_modules/
 
 # Realm Swift
 realm-swift/
+
+# Senin projedeki özel klasörler
+BuildData/
+Index/
+.claude/

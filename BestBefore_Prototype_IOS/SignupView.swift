@@ -49,6 +49,7 @@ struct SignupView: View {
           Spacer()
           ZStack(alignment: .leading) {
             OrbMenuPremium(
+              isHidden: .constant(false),
               onAdd: performSignup,
               onChat: {},
               onProfile: {},

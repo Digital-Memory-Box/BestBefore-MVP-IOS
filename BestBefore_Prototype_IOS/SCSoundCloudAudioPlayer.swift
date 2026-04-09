@@ -16,8 +16,9 @@ struct SoundCloudPlayerView: View {
 
     var body: some View {
         SCAudioEngineWebView(url: URL(string: embedUrl)!, scController: controller)
-            .frame(height: isController ? 0 : 160)
-            .opacity(isController ? 0 : 1)
+            .frame(width: isController ? 10 : nil, height: isController ? 10 : 160)
+            .opacity(isController ? 0.05 : 1)
+            .offset(x: isController ? -1000 : 0) // Move off screen if controller
             .background(Color.black.opacity(0.05))
             .cornerRadius(12)
     }
@@ -57,12 +58,17 @@ private struct SCAudioEngineWebView: UIViewRepresentable {
         scController.nextAction = { webView.evaluateJavaScript(scriptHandle + "widget.next()") }
         scController.prevAction = { webView.evaluateJavaScript(scriptHandle + "widget.prev()") }
         scController.playAtIndexAction = { index in webView.evaluateJavaScript(scriptHandle + "widget.skip(\(index))") }
+        scController.setVolumeAction = { volume in webView.evaluateJavaScript(scriptHandle + "widget.setVolume(\(volume))") }
         
         return webView
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        if uiView.url == nil {
+        // If the URL has changed, we must reload the WebView with the new music widget
+        let currentUrlString = uiView.url?.absoluteString ?? ""
+        let newUrlString = url.absoluteString
+        
+        if uiView.url == nil || !newUrlString.contains(currentUrlString) {
             let html = """
             <html>
             <head>
@@ -76,6 +82,31 @@ private struct SCAudioEngineWebView: UIViewRepresentable {
                     widget.bind(SC.Widget.Events.READY, function() {
                         window.webkit.messageHandlers.metadataHandler.postMessage({event: 'ready'});
                         
+                        // Fetch Immediate Metadata with Polling
+                        var pollCount = 0;
+                        var metadataInterval = setInterval(function() {
+                            widget.getCurrentSound(function(sound) {
+                                if (sound && sound.title) {
+                                    // Regex-based high-res upgrade
+                                    var artwork = sound.artwork_url || sound.user.avatar_url;
+                                    if (artwork) {
+                                        artwork = artwork.replace(/-(?:large|crop|small|t300x300|t67x67|badge)\\./, '-t500x500.');
+                                    }
+
+                                    // Handshake check
+                                    window.webkit.messageHandlers.metadataHandler.postMessage({
+                                        event: 'metadata',
+                                        title: sound.title,
+                                        user: sound.user.username,
+                                        artwork: artwork
+                                    });
+                                    clearInterval(metadataInterval);
+                                }
+                            });
+                            pollCount++;
+                            if (pollCount > 10) clearInterval(metadataInterval); // Stop after 10 tries (2s)
+                        }, 200);
+
                         // Fetch Full Playlist
                         widget.getSounds(function(sounds) {
                             var trackList = sounds.map(function(s, index) {
@@ -105,15 +136,6 @@ private struct SCAudioEngineWebView: UIViewRepresentable {
                                 window.webkit.messageHandlers.metadataHandler.postMessage({
                                     event: 'indexChange',
                                     index: index
-                                });
-                            });
-
-                            widget.getCurrentSound(function(sound) {
-                                window.webkit.messageHandlers.metadataHandler.postMessage({
-                                    event: 'metadata',
-                                    title: sound.title,
-                                    user: sound.user.username,
-                                    artwork: sound.artwork_url || sound.user.avatar_url
                                 });
                             });
                         });

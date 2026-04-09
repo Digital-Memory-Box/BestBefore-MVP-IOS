@@ -11,14 +11,22 @@ struct HallwayView: View {
   @State private var selectedRoomForDetail: (RoomObject, RoomDetailView.RoomContext)?
   @State private var navigateToDetail = false
   @State private var showingProfile = false
-  @State private var selectedTab = 0  // 0: Roaming (Everyone), 1: Hallway (Rooming)
+  @State private var selectedTab = 1  // 0: Roaming, 1: Hallway, 2: Artists
   @State private var searchText = ""
   @State private var selectedFilterTag: String? = nil
   @State private var showCelebrationAlert = false
   @State private var suggestedCelebrationName = ""
-  @State private var showScanner = false
   @State private var showingNotifications = false
   @State private var showingMiniPlayer = false
+  @State private var isOrbMenuHidden = false
+  @State private var showScanner = false
+  @State private var isDescriptionExpanded = false
+  @State private var showingSoundCloudModal = false
+  @State private var soundCloudControllers: [String: SoundCloudController] = [:]
+  @State private var accentColorHex: String = UserDefaults.standard.string(forKey: "accentColor") ?? (AuthService.shared.currentUser?.accentColor ?? "#007AFF")
+  @State private var selectedTheme: String = UserDefaults.standard.string(forKey: "selectedTheme") ?? "Default"
+  @State private var syncAccentWithRoom: Bool = UserDefaults.standard.bool(forKey: "syncAccentWithRoom")
+  @State private var applyAccentToAll: Bool = UserDefaults.standard.bool(forKey: "applyAccentToAll")
   @EnvironmentObject var inviteManager: InviteManager
 
   var onLogout: () -> Void
@@ -28,14 +36,28 @@ struct HallwayView: View {
   }
 
   private var accentColor: Color {
-    if let hex = AuthService.shared.currentUser?.accentColor {
-      return Color(hex: hex)
+    return Color(hex: accentColorHex)
+  }
+
+  private var iconColor: Color {
+    if applyAccentToAll && selectedTheme != "Default" {
+      return accentColor
     }
-    return .blue
+    return selectedTheme == "Midnight" ? accentColor : (selectedTheme == "Glass" ? accentColor : .white)
   }
 
   private var filteredRooms: [RoomObject] {
-    var result = rooms
+    var baseRooms: [RoomObject]
+    if selectedTab == 1 {
+      // Show mock rooms for verification + any real rooms
+      baseRooms = MockData.hallwayRooms + rooms.filter { !MockData.hallwayRooms.contains($0) }
+    } else if selectedTab == 2 {
+      baseRooms = MockData.artistRooms
+    } else {
+      baseRooms = rooms
+    }
+
+    var result = baseRooms
     if !searchText.isEmpty {
       result = result.filter {
         $0.name.localizedCaseInsensitiveContains(searchText)
@@ -60,9 +82,36 @@ struct HallwayView: View {
     Array(filteredRooms.prefix(4))
   }
 
+  private var currentRoom: RoomObject {
+    if filteredRooms.indices.contains(selectedIndex) {
+        return filteredRooms[selectedIndex]
+    }
+    return filteredRooms.first ?? MockData.hallwayRooms[0]
+  }
+
+  private var currentController: SoundCloudController {
+    let roomId = currentRoom.id
+    if let existing = soundCloudControllers[roomId] {
+        return existing
+    }
+    return SoundCloudController()
+  }
+
   var body: some View {
     ZStack {
       Color.black.ignoresSafeArea()
+
+      // --- Background SoundCloud Player (Görünmez Ses Motoru) ---
+      // Bu katman, WebView hiyerarşide olmadığı sürece sesin çalmaması sorununu kökten çözer.
+      if let musicUrl = currentRoom.backgroundMusic, !musicUrl.isEmpty {
+          SoundCloudPlayerView(
+              soundCloudUrl: musicUrl,
+              autoPlay: true,
+              isController: true,
+              controller: currentController
+          )
+          .id("bg_audio_\(currentRoom.id)") // Oda değiştiğinde player'ı yeniden yaratır
+      }
 
       // Hidden NavigationLink to trigger room detail
       if let (room, context) = selectedRoomForDetail {
@@ -74,13 +123,13 @@ struct HallwayView: View {
         }
       }
 
-      if selectedTab == 1 {
+      if selectedTab == 1 || selectedTab == 2 {
         VStack(alignment: .leading, spacing: 0) {
-          // Updated Header Area
+          // --- Premium Header ---
           HStack {
-            Text("Rooming")
+            Text(selectedTab == 1 ? "Hallway" : "Artists")
               .font(.system(size: 32, weight: .bold))
-              .foregroundColor(.white)
+              .foregroundColor((applyAccentToAll && selectedTheme != "Default") ? accentColor : .white)
             
             Spacer()
             
@@ -92,78 +141,116 @@ struct HallwayView: View {
               }) {
                 Image(systemName: "music.note.list")
                   .font(.system(size: 22))
-                  .foregroundColor(.white)
+                  .foregroundColor((applyAccentToAll && selectedTheme != "Default") ? accentColor : .white)
               }
               
               Button(action: { showingNotifications = true }) {
                 Image(systemName: "bell.fill")
                   .font(.system(size: 22))
-                  .foregroundColor(.white)
-                  .overlay(
-                    Circle()
-                      .fill(rooms.flatMap { $0.collaborators }.count > 0 ? Color.blue : Color.clear)
-                      .frame(width: 8, height: 8)
-                      .offset(x: 10, y: -10)
-                  )
+                  .foregroundColor((applyAccentToAll && selectedTheme != "Default") ? accentColor : .white)
               }
             }
           }
           .padding(.horizontal, 24)
-          .padding(.top, 10)
+          .padding(.top, 25)
 
-          // Search and Filter Bar
-          VStack(spacing: 12) {
-            HStack {
-              Image(systemName: "magnifyingglass")
-                .foregroundColor(.gray)
-              TextField("Search rooms...", text: $searchText)
-                .foregroundColor(.white)
-              if !searchText.isEmpty {
-                Button(action: { searchText = "" }) {
-                  Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(.gray)
+          // --- Search Bar ---
+          HStack {
+            Image(systemName: "magnifyingglass")
+              .foregroundColor((applyAccentToAll && selectedTheme != "Default") ? accentColor : .gray)
+            TextField("Search...", text: $searchText)
+              .foregroundColor((applyAccentToAll && selectedTheme != "Default") ? accentColor : .white)
+          }
+          .padding(12)
+          .background(Color.white.opacity(0.1))
+          .cornerRadius(12)
+          .padding(.horizontal, 24)
+          .padding(.top, 15)
+
+          // --- Tag Filter Bar (Restored) ---
+          if !allUserTags.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+              HStack {
+                Button(action: { selectedFilterTag = nil }) {
+                  Text("All")
+                    .font(.system(size: 14, weight: .medium))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                      ZStack {
+                      if selectedFilterTag == nil {
+                        if selectedTheme == "Glass" {
+                          accentColor.opacity(0.12)
+                            .background(.thickMaterial)
+                            .overlay(
+                              RoundedRectangle(cornerRadius: 20)
+                                .fill(Color.white.opacity(0.18))
+                            )
+                            .overlay(
+                              RoundedRectangle(cornerRadius: 20)
+                                .stroke(Color.white.opacity(0.7), lineWidth: 1.5)
+                            )
+                        } else if selectedTheme == "Midnight" {
+                          Color.black
+                            .overlay(
+                              RoundedRectangle(cornerRadius: 20)
+                                .stroke(accentColor, lineWidth: 2)
+                            )
+                        } else {
+                          accentColor
+                        }
+                      } else {
+                        Color.white.opacity(0.1)
+                      }
+                      }
+                      .clipShape(Capsule())
+                    )
+                    .foregroundColor(selectedFilterTag == nil ? iconColor : (applyAccentToAll ? iconColor : .white))
                 }
-              }
-            }
-            .padding(10)
-            .background(Color.white.opacity(0.1))
-            .cornerRadius(10)
-            .padding(.horizontal, 24)
 
-            if !allUserTags.isEmpty {
-              ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                  Button(action: { selectedFilterTag = nil }) {
-                    Text("All")
-                      .font(.system(size: 14, weight: .semibold))
+                ForEach(["#trip", "#music", "#science", "#party", "#family"], id: \.self) { tag in
+                  Button(action: { selectedFilterTag = tag }) {
+                    Text(tag)
+                      .font(.system(size: 14, weight: .medium))
                       .padding(.horizontal, 16)
                       .padding(.vertical, 8)
-                      .background(selectedFilterTag == nil ? accentColor : Color.white.opacity(0.1))
-                      .foregroundColor(.white)
-                      .cornerRadius(20)
-                  }
-
-                  ForEach(allUserTags, id: \.self) { tag in
-                    Button(action: {
-                      selectedFilterTag = (selectedFilterTag == tag) ? nil : tag
-                    }) {
-                      Text("#\(tag)")
-                        .font(.system(size: 14, weight: .semibold))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(
-                          selectedFilterTag == tag ? accentColor : Color.white.opacity(0.1)
-                        )
-                        .foregroundColor(.white)
-                        .cornerRadius(20)
-                    }
+                      .background(
+                        ZStack {
+                        if selectedFilterTag == tag {
+                          if selectedTheme == "Glass" {
+                            accentColor.opacity(0.12)
+                              .background(.thickMaterial)
+                              .overlay(
+                                RoundedRectangle(cornerRadius: 20)
+                                  .fill(Color.white.opacity(0.18))
+                              )
+                              .overlay(
+                                RoundedRectangle(cornerRadius: 20)
+                                  .stroke(Color.white.opacity(0.7), lineWidth: 1.5)
+                              )
+                          } else if selectedTheme == "Midnight" {
+                            Color.black
+                              .overlay(
+                                RoundedRectangle(cornerRadius: 20)
+                                  .stroke(accentColor, lineWidth: 2)
+                            )
+                          } else {
+                            accentColor
+                          }
+                        } else {
+                          Color.white.opacity(0.1)
+                        }
+                        }
+                        .clipShape(Capsule())
+                      )
+                      .foregroundColor(selectedFilterTag == tag ? iconColor : (applyAccentToAll ? iconColor : .white))
                   }
                 }
-                .padding(.horizontal, 24)
               }
+              .padding(.horizontal, 24)
             }
+            .padding(.top, 16)
           }
-          .padding(.top, 10)
 
           if isLoading {
             Spacer()
@@ -172,82 +259,113 @@ struct HallwayView: View {
             Spacer()
           } else if filteredRooms.isEmpty {
             Spacer()
-            VStack(spacing: 20) {
-              Text("No rooms found")
-                .foregroundColor(.gray)
-              Button("Create your first room") {
-                showingAddRoom = true
-              }
-              .foregroundColor(accentColor)
-              .padding(.horizontal, 20)
-              .padding(.vertical, 10)
-              .background(Color.white.opacity(0.1))
-              .cornerRadius(10)
-            }
-            .frame(maxWidth: .infinity)
+            Text("No content found")
+              .foregroundColor(.gray)
+              .frame(maxWidth: .infinity)
             Spacer()
           } else {
-            // Side-by-Side Content Area (New!)
-            HStack(alignment: .center, spacing: 0) {
-              // Left Side: Card Stack
-              CardStackView(rooms: mainStackRooms, selectedIndex: $selectedIndex)
-                .frame(width: UIScreen.main.bounds.width * 0.40)
-                .onTapGesture {
-                  let room = mainStackRooms[selectedIndex]
-                  selectedRoomForDetail = (room, .hallway)
-                  navigateToDetail = true
-                }
-
-              // Right Side: Room Info
-              let selectedRoom = mainStackRooms[selectedIndex]
-              VStack(alignment: .leading, spacing: 12) {
+            // --- Horizontal Carousel Area ---
+            let selectedRoom = selectedIndex < filteredRooms.count ? filteredRooms[selectedIndex] : filteredRooms[0]
+            
+            // Room title + CD Button at same level, card below
+            ZStack(alignment: .topTrailing) {
+              VStack(spacing: 0) {
+                // Room name centered
                 Text(selectedRoom.name)
                   .font(.system(size: 24, weight: .bold))
-                  .foregroundColor(.white)
-
-                if selectedRoom.isTimeCapsule {
-                  VStack(alignment: .leading, spacing: 2) {
-                    let d = selectedRoom.capsuleDurationDays
-                    let h = selectedRoom.capsuleDurationHours
-                    let m = selectedRoom.capsuleDurationMinutes
-                    Text("Time Capsule: \(d)d \(h)h \(m)m")
-                      .font(.system(size: 14, weight: .medium))
-                      .foregroundColor(.white.opacity(0.8))
-                    Text(selectedRoom.isLocked ? "Timer Active" : "Unlocked")
-                      .font(.system(size: 14, weight: .semibold))
-                  }
-                  .foregroundColor(.white)
-                }
-
-                if let description = selectedRoom.description, !description.isEmpty {
-                  VStack(alignment: .leading, spacing: 4) {
-                    Text("Description")
-                      .font(.system(size: 14, weight: .bold))
-                      .foregroundColor(.white)
-                    Text(description)
-                      .font(.system(size: 10))
-                      .foregroundColor(Color(white: 0.7))
-                      .lineLimit(4)
-                    Text("> Full Description")
-                      .font(.system(size: 11, weight: .bold))
-                      .foregroundColor(.white)
-                      .padding(.top, 4)
-                  }
+                  .foregroundColor((applyAccentToAll && selectedTheme != "Default") ? accentColor : .white)
+                  .frame(maxWidth: .infinity)
                   .padding(.top, 4)
+                  .offset(x: isOrbMenuHidden ? 0 : -35)
+                  .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isOrbMenuHidden)
+                
+                // Card stack directly below
+                CardStackView(
+                  rooms: filteredRooms,
+                  selectedIndex: $selectedIndex,
+                  isMenuHidden: isOrbMenuHidden,
+                  soundCloudControllers: soundCloudControllers
+                )
+                .frame(height: 320) // Reduced to make room for description x32780 (definitive final)
+                .padding(.top, 6)
+              }
+              
+              // CD Button - positioned next to room name, NOT overlapping card
+              Button(action: {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                  showingSoundCloudModal = true
+                }
+              }) {
+                Image(systemName: "opticaldisc")
+                  .font(.system(size: 22))
+                  .foregroundColor((applyAccentToAll && selectedTheme != "Default") ? accentColor : .white)
+                  .frame(width: 44, height: 44)
+                  .background(Color.white.opacity(0.12))
+                  .clipShape(Circle())
+              }
+              .contentShape(Circle())
+              .padding(.trailing, 20)
+              .padding(.top, 4) // Aligns with room name vertically
+              .offset(x: isOrbMenuHidden ? 0 : -35)
+              .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isOrbMenuHidden)
+              .zIndex(99)
+            }
+            .padding(.top, 10)
+            .zIndex(2)
+            
+            // --- Artist Detail Section ---
+            VStack(alignment: .leading, spacing: 14) {
+              // Header Row: Profile + Username ... Tags
+              HStack(alignment: .center) {
+                HStack(spacing: 12) {
+                  Circle()
+                    .fill(accentColor)
+                    .frame(width: 44, height: 44)
+                    .overlay(Image(systemName: "person.fill").font(.system(size: 18)).foregroundColor(.black))
+                  
+                  Text("@\(selectedRoom.ownerEmail?.components(separatedBy: "@").first ?? "artist")")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor((applyAccentToAll && selectedTheme != "Default") ? accentColor : .white)
+                }
+                
+                Spacer()
+                
+                HStack(spacing: 8) {
+                  ForEach(selectedRoom.tags.prefix(2), id: \.self) { tag in
+                    Text("#\(tag)").tagStyle(color: (applyAccentToAll && selectedTheme != "Default") ? accentColor : .white)
+                  }
+                  if selectedRoom.tags.count > 2 {
+                    Text("+")
+                      .font(.system(size: 13, weight: .bold))
+                      .padding(.horizontal, 10)
+                      .padding(.vertical, 4)
+                      .background(Color.white.opacity(0.15))
+                      .foregroundColor((applyAccentToAll && selectedTheme != "Default") ? accentColor : .white)
+                      .cornerRadius(12)
+                  }
                 }
               }
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .padding(.leading, 12)
-              .padding(.trailing, 80)  // Add significant padding to clear the Orb Menu
-
-              Spacer()
+              
+              // Description (Static 2-line limit)
+              Text(selectedRoom.description ?? "No description provided.")
+                .font(.system(size: 14))
+                .foregroundColor(((applyAccentToAll && selectedTheme != "Default") ? accentColor : Color.white).opacity(0.8))
+                .lineLimit(2)
+              
+              // See All Button
+              Button(action: {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                  isDescriptionExpanded = true
+                }
+              }) {
+                Text("See All")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(accentColor)
+              }
             }
-            .padding(.vertical, 20)
-
-            Spacer()
-
+            .padding(.horizontal, 24)
+            .padding(.top, 2)
           }
-
           Spacer()
         }
       } else if selectedTab == 0 {
@@ -262,34 +380,85 @@ struct HallwayView: View {
         )
       }
 
-      // Bottom Nav (ZStack for consistency)
       VStack {
         Spacer()
-        HallwayBottomNav(selectedTab: $selectedTab)
+        HallwayBottomNav(
+          selectedTab: $selectedTab,
+          accentColor: accentColor,
+          applyAccentToAll: applyAccentToAll && selectedTheme != "Default"
+        )
       }
+
+
 
       // Orb Menu (Premium Design)
-      OrbMenuPremium(
-        onAdd: { showingAddRoom = true },
-        onChat: { /* Handle chat */  },
-        onScan: { showScanner = true },
-        onProfile: { showingProfile = true },
-        onSearch: { /* Handle search */  }
-      )
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-      .zIndex(100)
+      if !isOrbMenuHidden {
+        OrbMenuPremium(
+          isHidden: $isOrbMenuHidden,
+          accentColor: accentColor,
+          selectedTheme: selectedTheme,
+          onAdd: { showingAddRoom = true },
+          onChat: { /* Handle chat */  },
+          onScan: { showScanner = true },
+          onProfile: { showingProfile = true },
+          onSearch: { /* Handle search */  }
+        )
+        .transition(.move(edge: .trailing).combined(with: .opacity))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        .zIndex(100)
+      }
 
-      // Mini Player Overlay
-      if showingMiniPlayer {
-        VStack {
-          Spacer()
-          MiniSoundCloudPlayer(isVisible: $showingMiniPlayer)
-            .padding(.bottom, 100) // Above bottom nav
-        }
-        .zIndex(150)
+      // Swipe-to-show detector (Responsive edge trigger)
+      if isOrbMenuHidden {
+        Color.clear
+          .frame(width: 80, height: 400) // Restricted height to prevent blocking the whole edge
+          .contentShape(Rectangle())
+          .gesture(
+            DragGesture()
+              .onChanged { gesture in
+                if gesture.translation.width < -10 {
+                  withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    isOrbMenuHidden = false
+                  }
+                }
+              }
+          )
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+          .zIndex(150) // Ensure it stays on top
+      }
+
+      // --- SoundCloud Player Modal Overlay (Full Width) ---
+      if showingSoundCloudModal {
+          SoundCloudPlayerModal(
+              room: currentRoom,
+              controller: currentController,
+              isPresented: $showingSoundCloudModal
+          )
+          .transition(.move(edge: .bottom).combined(with: .opacity))
+          .zIndex(2000)
+      }
+
+      // --- Full Screen Detail Overlay (TOP LEVEL) ---
+      if isDescriptionExpanded {
+        ArtistFullDetailView(room: currentRoom, isPresented: $isDescriptionExpanded)
+          .transition(.opacity)
+          .zIndex(1000)
       }
     }
-    .onAppear(perform: fetchRooms)
+    .onAppear {
+        fetchRooms()
+        
+        // Initial play for the first card after stabilization
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            if selectedIndex < filteredRooms.count {
+                let room = filteredRooms[selectedIndex]
+                if let controller = soundCloudControllers[room.id] {
+                    controller.setVolume(100)
+                    controller.play()
+                }
+            }
+        }
+    }
     .alert("Today's Celebration", isPresented: $showCelebrationAlert) {
       Button("Create Room") {
         createCelebrationRoom(name: suggestedCelebrationName)
@@ -342,7 +511,26 @@ struct HallwayView: View {
       _ in
       onLogout()
     }
-    .onChange(of: inviteManager.deepLinkedRoomId) { _, newId in
+    .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("AccentColorChanged"))) { _ in
+      self.accentColorHex = UserDefaults.standard.string(forKey: "accentColor") ?? "#007AFF"
+      self.selectedTheme = UserDefaults.standard.string(forKey: "selectedTheme") ?? "Default"
+      self.applyAccentToAll = UserDefaults.standard.bool(forKey: "applyAccentToAll")
+      self.syncAccentWithRoom = UserDefaults.standard.bool(forKey: "syncAccentWithRoom")
+      updateDynamicColor()
+    }
+    .onChange(of: selectedIndex) { newIndex in
+        syncSoundCloudAudio(for: newIndex)
+        updateDynamicColor()
+    }
+    .onChange(of: selectedTab) { newTab in
+        // Stop all music when leaving the Hallway tab (Tab 1 or Artists Tab 2)
+        if newTab != 1 && newTab != 2 {
+            for controller in soundCloudControllers.values {
+                controller.pause()
+            }
+        }
+    }
+    .onChange(of: inviteManager.deepLinkedRoomId) { newId in
       if let id = newId {
         handleDeepLink(id: id)
       }
@@ -372,31 +560,68 @@ struct HallwayView: View {
     isLoading = true
     Task {
       do {
-        rooms = try await Database.shared.getAllRooms()
-
+        let fetchedRooms = try await Database.shared.getAllRooms()
+        
         // --- Proactive Calendar Suggestions ---
         let celebrations = await CalendarService.shared.fetchTodayCelebrations()
-        if let celebration = celebrations.first, let roomName = celebration.title, !roomName.isEmpty
-        {
-          let seenKey = "seenCelebration_\(roomName.lowercased())"
-          let hasSeen = UserDefaults.standard.bool(forKey: seenKey)
-
-          if !hasSeen && !rooms.contains(where: { $0.name.lowercased() == roomName.lowercased() }) {
-            await MainActor.run {
+        
+        await MainActor.run {
+          self.rooms = fetchedRooms
+          
+          if let celebration = celebrations.first, let roomName = celebration.title, !roomName.isEmpty {
+            let seenKey = "seenCelebration_\(roomName.lowercased())"
+            let hasSeen = UserDefaults.standard.bool(forKey: seenKey)
+            
+            if !hasSeen && !rooms.contains(where: { $0.name.lowercased() == roomName.lowercased() }) {
               self.suggestedCelebrationName = roomName
               self.showCelebrationAlert = true
             }
           }
+          
+          // Pre-initialize SoundCloud controllers
+          for room in MockData.hallwayRooms {
+            if let musicUrl = room.backgroundMusic, !musicUrl.isEmpty {
+              if soundCloudControllers[room.id] == nil {
+                soundCloudControllers[room.id] = SoundCloudController()
+              }
+            }
+          }
+          
+          // Schedule notifications
+          for room in rooms {
+            NotificationManager.shared.scheduleRoomUnlockNotification(for: room)
+          }
+          
+          self.isLoading = false
+          syncSoundCloudAudio(for: selectedIndex)
         }
       } catch {
-        errorMessage = error.localizedDescription
+        await MainActor.run {
+          self.errorMessage = error.localizedDescription
+          self.isLoading = false
+        }
       }
-      
-      isLoading = false
-      
-      // Schedule notifications for future unlocks
-      for room in rooms {
-        NotificationManager.shared.scheduleRoomUnlockNotification(for: room)
+    }
+  }
+
+  private func syncSoundCloudAudio(for index: Int) {
+    guard filteredRooms.indices.contains(index) else { return }
+    let selectedRoom = filteredRooms[index]
+
+    // 1. Proactively ensure the controller exists for the target room
+    if let musicUrl = selectedRoom.backgroundMusic, !musicUrl.isEmpty {
+      if soundCloudControllers[selectedRoom.id] == nil {
+        soundCloudControllers[selectedRoom.id] = SoundCloudController()
+      }
+    }
+
+    // 2. Direct Switch: Play active, Pause others
+    for (id, controller) in soundCloudControllers {
+      if id == selectedRoom.id {
+        controller.setVolume(100)
+        controller.play()
+      } else {
+        controller.pause()
       }
     }
   }
@@ -464,6 +689,20 @@ struct HallwayView: View {
       isLoading = false
     }
   }
+
+  // Helper to update color based on selected room theme
+  private func updateDynamicColor() {
+    if syncAccentWithRoom {
+      let roomColor = currentRoom.themeColor
+      let hex = roomColor.toHex()
+      if accentColorHex != hex {
+        accentColorHex = hex
+        UserDefaults.standard.set(hex, forKey: "accentColor")
+        // Broadcast to other components (like the Orb)
+        NotificationCenter.default.post(name: NSNotification.Name("AccentColorChanged"), object: nil)
+      }
+    }
+  }
 }
 
 struct ExploreRow: View {
@@ -497,38 +736,29 @@ struct ExploreRow: View {
 
 struct HallwayBottomNav: View {
   @Binding var selectedTab: Int
+  let accentColor: Color
+  let applyAccentToAll: Bool
 
   var body: some View {
     HStack {
-      // Everyone Tab
+      // Roaming Tab
       Button(action: { selectedTab = 0 }) {
-        VStack(spacing: 2) {
-          if selectedTab == 0 {
-            Text("▽").foregroundColor(.white).font(.system(size: 10))
-          }
-          Text("Rooming")
-            .foregroundColor(selectedTab == 0 ? .white : .gray)
-            .fontWeight(selectedTab == 0 ? .bold : .regular)
-        }
+        TabItem(title: "Roaming", isSelected: selectedTab == 0, accentColor: accentColor, applyAccentToAll: applyAccentToAll)
       }
 
       Spacer()
 
-      // Rooming Tab
+      // Hallway Tab
       Button(action: { selectedTab = 1 }) {
-        VStack(spacing: 2) {
-          if selectedTab == 1 {
-            Text("▽").foregroundColor(.white).font(.system(size: 10))
-          }
-          Text("Everyone")
-            .foregroundColor(selectedTab == 1 ? .white : .gray)
-            .fontWeight(selectedTab == 1 ? .bold : .regular)
-        }
+        TabItem(title: "Hallway", isSelected: selectedTab == 1, accentColor: accentColor, applyAccentToAll: applyAccentToAll)
       }
 
       Spacer()
 
-      Text("Artists").foregroundColor(.gray)
+      // Artists Tab
+      Button(action: { selectedTab = 2 }) {
+        TabItem(title: "Artists", isSelected: selectedTab == 2, accentColor: accentColor, applyAccentToAll: applyAccentToAll)
+      }
     }
     .padding(.horizontal, 40)
     .frame(height: 80)
@@ -536,6 +766,182 @@ struct HallwayBottomNav: View {
   }
 }
 
+struct TabItem: View {
+  let title: String
+  let isSelected: Bool
+  let accentColor: Color
+  let applyAccentToAll: Bool
+
+  var body: some View {
+    VStack(spacing: 2) {
+      if isSelected {
+        Text("▽")
+          .foregroundColor(applyAccentToAll ? accentColor : .white)
+          .font(.system(size: 10))
+      }
+      Text(title)
+        .foregroundColor(isSelected ? (applyAccentToAll ? accentColor : .white) : .gray)
+        .fontWeight(isSelected ? .bold : .regular)
+    }
+  }
+}
+
+extension View {
+  func tagStyle(color: Color = .white) -> some View {
+    self.font(.system(size: 12, weight: .semibold))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(Color.white.opacity(0.15))
+        .foregroundColor(color)
+        .cornerRadius(12)
+  }
+}
+
+struct SoundCloudPlayerModal: View {
+    let room: RoomObject
+    @ObservedObject var controller: SoundCloudController
+    @Binding var isPresented: Bool
+    
+    var body: some View {
+        ZStack {
+            // Backup Controller (Invisible but active in Modal ZStack)
+            if let musicUrl = room.backgroundMusic, !musicUrl.isEmpty {
+                SoundCloudPlayerView(
+                    soundCloudUrl: musicUrl,
+                    autoPlay: false,
+                    isController: true,
+                    controller: controller
+                )
+                .frame(width: 1, height: 1)
+                .opacity(0.01)
+                .allowsHitTesting(false)
+            }
+
+            // Semi-transparent Backdrop
+            Color.black.opacity(0.85)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.spring()) { isPresented = false }
+                }
+            
+            VStack {
+                Spacer()
+                
+                // Modal content with Handle
+                VStack(spacing: 0) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.3))
+                        .frame(width: 40, height: 4)
+                        .padding(.top, 10)
+                        .padding(.bottom, 30)
+
+                    // Track Content
+                    VStack(spacing: 35) {
+                        // High-Res Artwork with Theme-Aware Glow
+                        ZStack {
+                            // Deep Glow behind artwork
+                            Circle()
+                                .fill(room.themeColor)
+                                .frame(width: 200, height: 200)
+                                .blur(radius: 80)
+                                .opacity(0.6)
+
+                            if let artwork = controller.currentArtworkUrl, let url = URL(string: artwork) {
+                                AsyncImage(url: url) { phase in
+                                    if let image = phase.image {
+                                        image.resizable()
+                                             .aspectRatio(contentMode: .fill)
+                                             .frame(width: 280, height: 280)
+                                             .cornerRadius(24)
+                                             .shadow(color: room.themeColor.opacity(0.3), radius: 20, x: 0, y: 10)
+                                    } else {
+                                        artworkPlaceholder
+                                    }
+                                }
+                            } else {
+                                artworkPlaceholder
+                            }
+                        }
+                        
+                        // Metadata Section (Uppercase Bold as per reference)
+                        VStack(spacing: 8) {
+                            Text(controller.currentTrackTitle.isEmpty ? room.name.uppercased() : controller.currentTrackTitle.uppercased())
+                                .font(.system(size: 20, weight: .black))
+                                .tracking(1)
+                                .foregroundColor(.white)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 30)
+                            
+                            Text(controller.currentTrackArtist.isEmpty ? "jergkoppf" : controller.currentTrackArtist.lowercased())
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.white.opacity(0.5))
+
+                            // Contextual Now Playing with Theme Color
+                            HStack(spacing: 8) {
+                                Image(systemName: "waveform")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(room.themeColor)
+                                    .symbolEffect(.variableColor.iterative, isActive: true)
+
+                                Text("NOW PLAYING FROM \(room.name.uppercased())")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .tracking(2)
+                                    .foregroundColor(room.themeColor)
+                            }
+                            .padding(.top, 15)
+                        }
+
+                        // Premium Listen Button (Orange)
+                        if let urlString = room.backgroundMusic, let url = URL(string: urlString) {
+                            Link(destination: url) {
+                                HStack {
+                                    Image(systemName: "arrow.up.right.square.fill")
+                                    Text("Listen on SoundCloud")
+                                        .fontWeight(.bold)
+                                }
+                                .font(.system(size: 16))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 18)
+                                .background(Color(hex: "FF5500")) // SoundCloud Orange
+                                .cornerRadius(16)
+                                .padding(.horizontal, 40)
+                            }
+                        }
+                    }
+                    .padding(.bottom, 60)
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 40)
+                        .fill(Color.black.opacity(0.95))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 40)
+                                .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+                        )
+                )
+            }
+        }
+        .task {
+            // Native Metadata Fetch on Modal Load
+            if let musicUrl = room.backgroundMusic {
+                await controller.fetchMetadata(for: musicUrl)
+            }
+        }
+    }
+    
+    private var artworkPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 24)
+            .fill(room.themeColor.opacity(0.2))
+            .frame(width: 280, height: 280)
+            .overlay(
+                Image(systemName: "music.note")
+                    .font(.system(size: 60))
+                    .foregroundColor(room.themeColor)
+            )
+    }
+}
+
 #Preview {
   HallwayView()
+    .environmentObject(InviteManager.shared)
 }
